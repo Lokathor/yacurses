@@ -5,7 +5,7 @@ fn main() {
   let mut win = Curses::init();
   win.set_echo(false);
   win.set_color_id_rgb(ColorID::WHITE, [1.0, 1.0, 1.0]).unwrap();
-  win.move_cursor(Position { x: 0, y: 1 });
+  win.move_cursor(Position { x: 75, y: 1 });
   let ascii = b'@';
   let opt_color_pair = None;
     win.print_ch(CursesGlyph { ascii, opt_color_pair, attributes: Attributes(0) });
@@ -13,8 +13,17 @@ fn main() {
     let attributes = Attributes::BOLD;
     win.print_ch(CursesGlyph { ascii, opt_color_pair, attributes });
   }
-  const Q: u32 = b'q' as u32;
-  const P: u32 = b'p' as u32;
+  win.move_cursor(Position { x: 75, y: 5 });
+  win.print_str("Hello there, General Kenobi!");
+  win.poll_events().unwrap();
+  win.set_background('!');
+  win.clear();
+  win.print_ch('a');
+  //
+  win.move_cursor(Position { x: 75, y: 8 });
+  win.copy_glyphs(&[CursesGlyph::from(ascii); 10]);
+  const Q: CursesKey = CursesKey::from_ascii(b'q');
+  const P: CursesKey = CursesKey::from_ascii(b'p');
   loop {
     match win.poll_events() {
       Some(Q) => break,
@@ -31,6 +40,10 @@ fn main() {
         let mut str_buf = String::with_capacity(1024);
         std::io::stdin().read_line(&mut str_buf).unwrap();
         println!("got line: {}", str_buf);
+      }
+      Some(CursesKey::UnknownKey(u)) => {
+        let sh = win.shell_mode().unwrap();
+        panic!("Unknown Key: {}", u);
       }
       _ => continue,
     }

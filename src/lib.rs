@@ -1,6 +1,5 @@
 #![no_std]
 #![warn(missing_docs)]
-#![allow(unused_imports)]
 
 //! Yet another curses library.
 
@@ -12,7 +11,6 @@ use core::{
 };
 use core::num::NonZeroU8;
 
-#[allow(dead_code)]
 mod bind;
 use bind::*;
 
@@ -33,6 +31,13 @@ macro_rules! unsafe_always_ok {
   ($func:ident($($tree:tt)*)) => {{
     let ret = unsafe { $func($($tree)*) };
     debug_assert!(ret != ERR);
+  }}
+}
+
+/// We're doing an unsafe call that returns nothing.
+macro_rules! unsafe_void {
+  ($func:ident($($tree:tt)*)) => {{
+    let _: () = unsafe { $func($($tree)*) };
   }}
 }
 
@@ -139,6 +144,67 @@ impl Curses {
   pub fn print_ch<C: Into<CursesGlyph>>(&mut self, c: C) -> Result<(), ()> {
     unsafe_call_result!(waddch(self.ptr, c.into().as_chtype()))
   }
+  
+  /// Prints the str given, advancing the cursor.
+  ///
+  /// This is identical to calling [`print_ch`](Curses::print_ch) on every byte in `s`.
+  /// If your `&str` has non-ascii data you'll get garbage on the screen.
+  ///
+  /// * Wraps to the next line if in the final col.
+  /// * Will scroll the terminal if in the final row, if scrolling is enabled.
+  pub fn print_str(&mut self, s: &str) -> Result<(), ()> {
+    unsafe_call_result!(waddnstr(self.ptr, s.as_ptr().cast(), s.len().try_into().unwrap()))
+  }
+  
+  /// Inserts the given character under the cursor.
+  ///
+  /// * The cursor doesn't move.
+  /// * Other characters to the right get pushed 1 cell forward.
+  /// * The last character of the line gets pushed off the screen.
+  pub fn insert_ch<C: Into<CursesGlyph>>(&mut self, c: C) -> Result<(), ()> {
+    unsafe_call_result!(winsch(self.ptr, c.into().as_chtype()))
+  }
+  
+  /// Deleted character under the cursor.
+  ///
+  /// * The cursor doesn't move.
+  /// * Other characters to the right get pulled 1 cell backward.
+  /// * The last character of the line is now blank.
+  pub fn delete_ch(&mut self) -> Result<(), ()> {
+    unsafe_call_result!(wdelch(self.ptr))
+  }
+  
+  /// Copies the slice of glyphs starting from the cursor position.
+  ///
+  /// * Does not advance the cursor.
+  /// * Does not wrap the content to the next line.
+  pub fn copy_glyphs(&mut self, s: &[CursesGlyph]) -> Result<(), ()> {
+    unsafe_call_result!(waddchnstr(self.ptr, s.as_ptr().cast(), s.len().try_into().unwrap()))
+  }
+  
+  /// Clears the entire screen and moves the cursor to `(0,0)`.
+  pub fn clear(&mut self) -> Result<(), ()> {
+    unsafe_call_result!(wclear(self.ptr))
+  }
+  
+  /// Set the given attribute bits to be on or off.
+  pub fn set_attributes(&mut self, attr: Attributes, on: bool) -> Result<(), ()> {
+    let attr: i32 = ((attr.0 as u32) << 16) as i32;
+    if on {
+      unsafe_call_result!(wattron(self.ptr, attr))
+    } else {
+      unsafe_call_result!(wattroff(self.ptr, attr))
+    }
+  }
+  
+  /// Assigns the timeout to use with [`poll_events`](Curses::poll_events).
+  ///
+  /// * Negative: infinite time, `poll_events` is blocking.
+  /// * Zero: No timeout, `poll_events` returns `None` immediately if no input is ready.
+  /// * Positive: wait up to this many milliseconds before returning `None`.
+  pub fn set_timeout(&mut self, time: i32) {
+    unsafe_void!(wtimeout(self.ptr, time))
+  }
 
   /// Gets an input event.
   ///
@@ -146,14 +212,61 @@ impl Curses {
   /// * Keypad keys are values >= 256.
   /// * If the terminal is resized, that shows up as a special key in this queue.
   /// * If you have a timeout set and the time expires, you get `None` back.
-  pub fn poll_events(&mut self) -> Option<u32> {
-    // TODO: make the events a proper enum.
+  pub fn poll_events(&mut self) -> Option<CursesKey> {
     const ERR_U32: u32 = ERR as u32;
-    let k = unsafe { wgetch(self.ptr) };
-    match k as u32 {
+    const KEY_F64: u32 = KEY_F0 + 64;
+    match (unsafe { wgetch(self.ptr) }) as u32 {
       ERR_U32 => None,
-      other => Some(other as _)
+      ascii if (ascii <= u8::MAX as u32) => {
+        Some(CursesKey::Ascii(ascii as u8))
+      },
+      KEY_BACKSPACE => Some(CursesKey::Backspace),
+      KEY_UP => Some(CursesKey::ArrowUp),
+      KEY_DOWN => Some(CursesKey::ArrowDown),
+      KEY_LEFT => Some(CursesKey::ArrowLeft),
+      KEY_RIGHT => Some(CursesKey::ArrowRight),
+      KEY_IC => Some(CursesKey::Insert),
+      KEY_DC => Some(CursesKey::Delete),
+      KEY_HOME => Some(CursesKey::Home),
+      KEY_END => Some(CursesKey::End),
+      KEY_PPAGE => Some(CursesKey::PageUp),
+      KEY_NPAGE => Some(CursesKey::PageDown),
+      KEY_B2 => Some(CursesKey::Keypad5NoNumlock),
+      KEY_RESIZE => Some(CursesKey::TerminalResized),
+      f if (f >= KEY_F0 && f <= KEY_F64) => {
+        Some(CursesKey::Function((f-KEY_F0) as u8))
+      },
+      other => Some(CursesKey::UnknownKey(other)),
     }
+  }
+  
+  /// Pushes this event to the front of the event queue so that the next `poll_events` returns this value.
+  pub fn un_get_event(&mut self, event: Option<CursesKey>) -> Result<(), ()> {
+    let ev: u32 = match event {
+      None => ERR as u32,
+      Some(CursesKey::Ascii(ascii)) => ascii as u32,
+      Some(CursesKey::Function(f)) => KEY_F0 + (f as u32),
+      Some(CursesKey::Backspace) => KEY_BACKSPACE,
+      Some(CursesKey::ArrowUp) => KEY_UP,
+      Some(CursesKey::ArrowDown) => KEY_DOWN,
+      Some(CursesKey::ArrowLeft) => KEY_LEFT,
+      Some(CursesKey::ArrowRight) => KEY_RIGHT,
+      Some(CursesKey::Insert) => KEY_IC,
+      Some(CursesKey::Delete) => KEY_DC,
+      Some(CursesKey::Home) => KEY_HOME,
+      Some(CursesKey::End) => KEY_END,
+      Some(CursesKey::PageUp) => KEY_PPAGE,
+      Some(CursesKey::PageDown) => KEY_NPAGE,
+      Some(CursesKey::Keypad5NoNumlock) => KEY_B2,
+      Some(CursesKey::TerminalResized) => KEY_RESIZE,
+      Some(CursesKey::UnknownKey(u)) => u,
+    };
+    unsafe_call_result!(ungetch(ev as i32))
+  }
+  
+  /// Flushes all pending key events.
+  pub fn flush_events(&mut self) -> Result<(), ()> {
+    unsafe_call_result!(flushinp())
   }
 
   /// Return the terminal to shell mode temporarily.
@@ -162,6 +275,11 @@ impl Curses {
     unsafe_call_result!(endwin()).map(move |_|{
       CursesShell { win: self }
     })
+  }
+  
+  /// If the terminal supports colors at all.
+  pub fn has_color(&self) -> bool {
+    unsafe { has_colors() }
   }
   
   /// If the terminal is able to change the RGB values of a given [`ColorID`]
@@ -226,6 +344,61 @@ impl Curses {
       }
     })
   }
+  
+  /// Sets the default coloring for all newly printed glyphs.
+  pub fn set_active_color_pair(&mut self, opt_pair: Option<ColorPair>) -> Result<(), ()> {
+    let p = opt_pair.map(|cp|cp.0.get()).unwrap_or(0).into();
+    unsafe_call_result!(wcolor_set(self.ptr, p, core::ptr::null_mut()))
+  }
+  
+  /// Set if the window can be scrolled or not.
+  ///
+  /// * Off by default.
+  pub fn set_scrollable(&mut self, yes: bool) -> Result<(), ()> {
+    unsafe_call_result!(scrollok(self.ptr, yes))
+  }
+  
+  /// Sets the top line and bottom line that mark the edges of the scrollable region.
+  ///
+  /// Lines `0..=top` and `bottom..` will stay static when the window is scrolled.
+  /// All other lines will move 1 row upward.
+  ///
+  /// * By default the scroll region is the entire terminal.
+  pub fn set_scroll_region(&mut self, top: u32, bottom: u32) -> Result<(), ()> {
+    unsafe_call_result!(wsetscrreg(self.ptr, top as i32, bottom as i32))
+  }
+  
+  /// Scrolls the window by the given number of lines.
+  ///
+  /// * Negative: text moves down the page.
+  /// * Positive: text moves up the page.
+  /// * Zero: text doesn't move.
+  pub fn scroll(&mut self, n: i32) -> Result<(), ()> {
+    unsafe_call_result!(wscrl(self.ptr, n))
+  }
+  
+  /// Sets the cursor visibility.
+  /// 
+  /// Returns the old visibility, or Err if it can't be set.
+  pub fn set_cursor_visibility(&mut self, vis: CursorVisibility) -> Result<CursorVisibility, ()> {
+    let old = unsafe { curs_set(vis as i32) };
+    Ok(match old {
+      0 => CursorVisibility::Invisible,
+      1 => CursorVisibility::Normal,
+      2 => CursorVisibility::VeryVisible,
+      _ => return Err(()),
+    })
+  }
+  
+  /// Sets the background glyph.
+  pub fn set_background<C: Into<CursesGlyph>>(&mut self, c: C) -> Result<(), ()> {
+    unsafe_call_result!(wbkgd(self.ptr, c.into().as_chtype()))
+  }
+  
+  /// Gets the background glyph.
+  pub fn get_background(&self) -> CursesGlyph {
+    unsafe { core::mem::transmute(getbkgd(self.ptr)) }
+  }
 }
 
 /// A position on the screen.
@@ -280,6 +453,17 @@ impl CursesGlyph {
   fn as_chtype(self) -> chtype {
     unsafe { core::mem::transmute(self) }
   }
+}
+
+/// Use with [`set_cursor_visibility`](Curses::set_cursor_visibility)
+#[repr(i32)]
+pub enum CursorVisibility {
+  /// Cursor is invisible.
+  Invisible = 0,
+  /// Cursor is normal.
+  Normal = 1,
+  /// Cursor is extra visible (not always supported).
+  VeryVisible = 2,
 }
 
 /// Names a color within curses.
@@ -434,6 +618,53 @@ impl BitXorAssign for Attributes {
   }
 }
 
+/// The types of input keys that `ncurses` can generate.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CursesKey {
+  /// An ascii input (most all the keys with symbols on them).
+  Ascii(u8),
+  /// The terminal was resized.
+  TerminalResized,
+  /// Backspace key
+  Backspace,
+  /// Arrow upward (arrow key or numpad without numlock)
+  ArrowUp,
+  /// Arrow downward (arrow key or numpad without numlock)
+  ArrowDown,
+  /// Arrow left (arrow key or numpad without numlock)
+  ArrowLeft,
+  /// Arrow right (arrow key or numpad without numlock)
+  ArrowRight,
+  /// Insert key
+  Insert,
+  /// Delete key
+  Delete,
+  /// Home key (or numpad 7 without numlock on)
+  Home,
+  /// End key (or numpad 1 without numlock on)
+  End,
+  /// Page up / Previous Page  (or numpad 9 without numlock on)
+  PageUp,
+  /// Page down / Next Page (or numpad 3 without numlock on)
+  PageDown,
+  /// The middle key of the numpad if numlock isn't on.
+  Keypad5NoNumlock,
+  /// A function key (F1, F2, etc.).
+  ///
+  /// These aren't the best supported because the terminal emulator often eat them before the program sees it.
+  Function(u8),
+  /// Some unknown input value.
+  ///
+  /// You might want to file an issue to get this value included.
+  UnknownKey(u32),
+}
+impl CursesKey {
+  /// Convert a byte into a `CursesKey::Ascii(byte)`
+  pub const fn from_ascii(ascii: u8) -> Self {
+    CursesKey::Ascii(ascii)
+  }
+}
+
 /// While you hold this, the terminal is in shell mode.
 ///
 /// In other words, `stdout` and `stderr` will work normally.
@@ -459,265 +690,53 @@ impl<'a> Deref for CursesShell<'a> {
     }
 }
 
-/*
 /// This is how you check the ACS map in general. Specific usages are below.
 fn ncurses_acs(c: char) -> u8 {
   (unsafe { *acs_map.as_ptr().add(c as u8 as usize) }) as u8
 }
 
-pub fn acs_ulcorner() -> CursesGlyph {
-  CursesGlyph {
-    ascii: ncurses_acs('l'),
-    color_pair: ColorPair(0),
-    attributes: Attributes::ALT_CHAR_SET,
+macro_rules! acs_getter {
+  ($fn_name:ident, $ch:expr, $d:expr) => {
+    #[doc = $d]
+    pub fn $fn_name() -> CursesGlyph {
+      CursesGlyph {
+        ascii: ncurses_acs($ch),
+        opt_color_pair: None,
+        attributes: Attributes::ALT_CHAR_SET,
+      }
+    }
   }
 }
 
-pub fn acs_llcorner() -> CursesGlyph {
-  CursesGlyph {
-    ascii: ncurses_acs('m'),
-    color_pair: ColorPair(0),
-    attributes: Attributes::ALT_CHAR_SET,
-  }
-}
-
-pub fn acs_urcorner() -> CursesGlyph {
-  CursesGlyph {
-    ascii: ncurses_acs('k'),
-    color_pair: ColorPair(0),
-    attributes: Attributes::ALT_CHAR_SET,
-  }
-}
-
-pub fn acs_lrcorner() -> CursesGlyph {
-  CursesGlyph {
-    ascii: ncurses_acs('j'),
-    color_pair: ColorPair(0),
-    attributes: Attributes::ALT_CHAR_SET,
-  }
-}
-
-pub fn acs_ltee() -> CursesGlyph {
-  CursesGlyph {
-    ascii: ncurses_acs('t'),
-    color_pair: ColorPair(0),
-    attributes: Attributes::ALT_CHAR_SET,
-  }
-}
-
-pub fn acs_rtee() -> CursesGlyph {
-  CursesGlyph {
-    ascii: ncurses_acs('u'),
-    color_pair: ColorPair(0),
-    attributes: Attributes::ALT_CHAR_SET,
-  }
-}
-
-pub fn acs_btee() -> CursesGlyph {
-  CursesGlyph {
-    ascii: ncurses_acs('v'),
-    color_pair: ColorPair(0),
-    attributes: Attributes::ALT_CHAR_SET,
-  }
-}
-
-pub fn acs_ttee() -> CursesGlyph {
-  CursesGlyph {
-    ascii: ncurses_acs('w'),
-    color_pair: ColorPair(0),
-    attributes: Attributes::ALT_CHAR_SET,
-  }
-}
-
-pub fn acs_hline() -> CursesGlyph {
-  CursesGlyph {
-    ascii: ncurses_acs('q'),
-    color_pair: ColorPair(0),
-    attributes: Attributes::ALT_CHAR_SET,
-  }
-}
-
-pub fn acs_vline() -> CursesGlyph {
-  CursesGlyph {
-    ascii: ncurses_acs('x'),
-    color_pair: ColorPair(0),
-    attributes: Attributes::ALT_CHAR_SET,
-  }
-}
-
-pub fn acs_plus() -> CursesGlyph {
-  CursesGlyph {
-    ascii: ncurses_acs('n'),
-    color_pair: ColorPair(0),
-    attributes: Attributes::ALT_CHAR_SET,
-  }
-}
-
-pub fn acs_s1() -> CursesGlyph {
-  CursesGlyph {
-    ascii: ncurses_acs('o'),
-    color_pair: ColorPair(0),
-    attributes: Attributes::ALT_CHAR_SET,
-  }
-}
-
-pub fn acs_s9() -> CursesGlyph {
-  CursesGlyph {
-    ascii: ncurses_acs('s'),
-    color_pair: ColorPair(0),
-    attributes: Attributes::ALT_CHAR_SET,
-  }
-}
-
-pub fn acs_diamond() -> CursesGlyph {
-  CursesGlyph {
-    ascii: ncurses_acs('`'),
-    color_pair: ColorPair(0),
-    attributes: Attributes::ALT_CHAR_SET,
-  }
-}
-
-pub fn acs_ckboard() -> CursesGlyph {
-  CursesGlyph {
-    ascii: ncurses_acs('a'),
-    color_pair: ColorPair(0),
-    attributes: Attributes::ALT_CHAR_SET,
-  }
-}
-
-pub fn acs_degree() -> CursesGlyph {
-  CursesGlyph {
-    ascii: ncurses_acs('f'),
-    color_pair: ColorPair(0),
-    attributes: Attributes::ALT_CHAR_SET,
-  }
-}
-
-pub fn acs_plminus() -> CursesGlyph {
-  CursesGlyph {
-    ascii: ncurses_acs('g'),
-    color_pair: ColorPair(0),
-    attributes: Attributes::ALT_CHAR_SET,
-  }
-}
-
-pub fn acs_bullet() -> CursesGlyph {
-  CursesGlyph {
-    ascii: ncurses_acs('~'),
-    color_pair: ColorPair(0),
-    attributes: Attributes::ALT_CHAR_SET,
-  }
-}
-
-pub fn acs_larrow() -> CursesGlyph {
-  CursesGlyph {
-    ascii: ncurses_acs(','),
-    color_pair: ColorPair(0),
-    attributes: Attributes::ALT_CHAR_SET,
-  }
-}
-
-pub fn acs_rarrow() -> CursesGlyph {
-  CursesGlyph {
-    ascii: ncurses_acs('+'),
-    color_pair: ColorPair(0),
-    attributes: Attributes::ALT_CHAR_SET,
-  }
-}
-
-pub fn acs_darrow() -> CursesGlyph {
-  CursesGlyph {
-    ascii: ncurses_acs('.'),
-    color_pair: ColorPair(0),
-    attributes: Attributes::ALT_CHAR_SET,
-  }
-}
-
-pub fn acs_uarrow() -> CursesGlyph {
-  CursesGlyph {
-    ascii: ncurses_acs('-'),
-    color_pair: ColorPair(0),
-    attributes: Attributes::ALT_CHAR_SET,
-  }
-}
-
-pub fn acs_board() -> CursesGlyph {
-  CursesGlyph {
-    ascii: ncurses_acs('h'),
-    color_pair: ColorPair(0),
-    attributes: Attributes::ALT_CHAR_SET,
-  }
-}
-
-pub fn acs_lantern() -> CursesGlyph {
-  CursesGlyph {
-    ascii: ncurses_acs('i'),
-    color_pair: ColorPair(0),
-    attributes: Attributes::ALT_CHAR_SET,
-  }
-}
-
-pub fn acs_block() -> CursesGlyph {
-  CursesGlyph {
-    ascii: ncurses_acs('0'),
-    color_pair: ColorPair(0),
-    attributes: Attributes::ALT_CHAR_SET,
-  }
-}
-
-pub fn acs_s3() -> CursesGlyph {
-  CursesGlyph {
-    ascii: ncurses_acs('p'),
-    color_pair: ColorPair(0),
-    attributes: Attributes::ALT_CHAR_SET,
-  }
-}
-
-pub fn acs_s7() -> CursesGlyph {
-  CursesGlyph {
-    ascii: ncurses_acs('r'),
-    color_pair: ColorPair(0),
-    attributes: Attributes::ALT_CHAR_SET,
-  }
-}
-
-pub fn acs_lequal() -> CursesGlyph {
-  CursesGlyph {
-    ascii: ncurses_acs('y'),
-    color_pair: ColorPair(0),
-    attributes: Attributes::ALT_CHAR_SET,
-  }
-}
-
-pub fn acs_gequal() -> CursesGlyph {
-  CursesGlyph {
-    ascii: ncurses_acs('z'),
-    color_pair: ColorPair(0),
-    attributes: Attributes::ALT_CHAR_SET,
-  }
-}
-
-pub fn acs_pi() -> CursesGlyph {
-  CursesGlyph {
-    ascii: ncurses_acs('{'),
-    color_pair: ColorPair(0),
-    attributes: Attributes::ALT_CHAR_SET,
-  }
-}
-
-pub fn acs_nequal() -> CursesGlyph {
-  CursesGlyph {
-    ascii: ncurses_acs('|'),
-    color_pair: ColorPair(0),
-    attributes: Attributes::ALT_CHAR_SET,
-  }
-}
-
-pub fn acs_sterling() -> CursesGlyph {
-  CursesGlyph {
-    ascii: ncurses_acs('}'),
-    color_pair: ColorPair(0),
-    attributes: Attributes::ALT_CHAR_SET,
-  }
-}
-*/
+acs_getter!(acs_ulcorner, 'l', "Upper left corner of a box.");
+acs_getter!(acs_llcorner, 'm', "Lower left corner of a box.");
+acs_getter!(acs_urcorner, 'k', "Upper right corner of a box.");
+acs_getter!(acs_lrcorner, 'j', "Lower right corner of a box.");
+acs_getter!(acs_ltee, 't', "Left T");
+acs_getter!(acs_rtee, 'u', "Right T");
+acs_getter!(acs_btee, 'v', "Bottom T");
+acs_getter!(acs_ttee, 'w', "Top T");
+acs_getter!(acs_hline, 'q', "Horizontal line");
+acs_getter!(acs_vline, 'x', "Vertical line");
+acs_getter!(acs_plus, 'n', "Plus shaped \"line\" in all four directions");
+acs_getter!(acs_s1, 'o', "??");
+acs_getter!(acs_s9, 's', "??");
+acs_getter!(acs_diamond, '`', "Diamond");
+acs_getter!(acs_ckboard, 'a', "Checkerboard");
+acs_getter!(acs_degree, 'f', "Degree symbol (like with an angle)");
+acs_getter!(acs_plminus, 'g', "Plus/Minus");
+acs_getter!(acs_bullet, '~', "Bullet point");
+acs_getter!(acs_larrow, ',', "Left arrow");
+acs_getter!(acs_rarrow, '+', "Right arrow");
+acs_getter!(acs_darrow, '.', "Down arrow");
+acs_getter!(acs_uarrow, '-', "Up arrow");
+acs_getter!(acs_board, 'h', "??");
+acs_getter!(acs_lantern, 'i', "??");
+acs_getter!(acs_block, '0', "??");
+acs_getter!(acs_s3, 'p', "??");
+acs_getter!(acs_s7, 'r', "??");
+acs_getter!(acs_lequal, 'y', "Less-than or equal to.");
+acs_getter!(acs_gequal, 'z', "Greater-than or equal to.");
+acs_getter!(acs_nequal, '|', "Not-equal to.");
+acs_getter!(acs_pi, '{', "Pi");
+acs_getter!(acs_sterling, '}', "British pounds sterling.");

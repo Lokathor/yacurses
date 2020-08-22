@@ -5,12 +5,13 @@ bindgen --disable-name-namespacing --impl-debug --no-doc-comments \
  --raw-line '#![allow(bad_style)]' \
  --raw-line '#[link(name = "ncurses")] extern "C" {}' \
  --rust-target "1.33" \
- --whitelist-var '(COLOR.*|KEY.*|ERR|stdscr|acs_map)' \
+ --whitelist-var '(COLOR.*|ERR|stdscr|acs_map)' \
+ --whitelist-var 'KEY_(BACKSPACE|UP|DOWN|LEFT|RIGHT|UP|DOWN|IC|DC|HOME|END|PPAGE|NPAGE|B2|RESIZE|F0)' \
  --whitelist-function '(initscr|endwin|isendwin|def_prog_mode|color_content|pair_content)' \
- --whitelist-function '(start_color|has_colors|can_change_color|init_color|init_pair|COLOR_PAIR)' \
- --whitelist-function '(keypad|echo|noecho|cbreak|nocbreak|nl|nonl|raw|noraw|curs_set)' \
- --whitelist-function '(flushinp|ungetch|clearok|immedok|leaveok|scrollok|wechochar|curs_bkgd)' \
- --whitelist-function 'w(move|attron|attroff|timeout|getch|setscrreg|chgat|addch|addnstr|addchnstr|insch|delch|refresh|vline|hline|scrl)' \
+ --whitelist-function '(start_color|has_colors|can_change_color|init_color|init_pair)' \
+ --whitelist-function '(keypad|echo|noecho|cbreak|curs_set|wbkgd|getbkgd)' \
+ --whitelist-function '(flushinp|ungetch|scrollok|curs_bkgd)' \
+ --whitelist-function 'w(move|attron|attroff|timeout|clear|getch|setscrreg|addch|addnstr|addchnstr|insch|delch|refresh|scrl|color_set)' \
  --whitelist-function 'get(curx|cury|maxx|maxy)' \
  --opaque-type WINDOW \
  wrapper.h
