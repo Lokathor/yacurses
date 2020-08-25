@@ -691,16 +691,16 @@ impl<'a> Deref for CursesShell<'a> {
 }
 
 /// This is how you check the ACS map in general. Specific usages are below.
-fn ncurses_acs(c: char) -> u8 {
-  (unsafe { *acs_map.as_ptr().add(c as u8 as usize) }) as u8
+unsafe fn ncurses_acs(c: char) -> u8 {
+  (*acs_map.as_ptr().add(c as u8 as usize)) as u8
 }
 
 macro_rules! acs_getter {
   ($fn_name:ident, $ch:expr, $d:expr) => {
     #[doc = $d]
-    pub fn $fn_name() -> CursesGlyph {
+    pub fn $fn_name(&self) -> CursesGlyph {
       CursesGlyph {
-        ascii: ncurses_acs($ch),
+        ascii: unsafe { ncurses_acs($ch) },
         opt_color_pair: None,
         attributes: Attributes::ALT_CHAR_SET,
       }
@@ -708,35 +708,37 @@ macro_rules! acs_getter {
   }
 }
 
-acs_getter!(acs_ulcorner, 'l', "Upper left corner of a box.");
-acs_getter!(acs_llcorner, 'm', "Lower left corner of a box.");
-acs_getter!(acs_urcorner, 'k', "Upper right corner of a box.");
-acs_getter!(acs_lrcorner, 'j', "Lower right corner of a box.");
-acs_getter!(acs_ltee, 't', "Left T");
-acs_getter!(acs_rtee, 'u', "Right T");
-acs_getter!(acs_btee, 'v', "Bottom T");
-acs_getter!(acs_ttee, 'w', "Top T");
-acs_getter!(acs_hline, 'q', "Horizontal line");
-acs_getter!(acs_vline, 'x', "Vertical line");
-acs_getter!(acs_plus, 'n', "Plus shaped \"line\" in all four directions");
-acs_getter!(acs_s1, 'o', "??");
-acs_getter!(acs_s9, 's', "??");
-acs_getter!(acs_diamond, '`', "Diamond");
-acs_getter!(acs_ckboard, 'a', "Checkerboard");
-acs_getter!(acs_degree, 'f', "Degree symbol (like with an angle)");
-acs_getter!(acs_plminus, 'g', "Plus/Minus");
-acs_getter!(acs_bullet, '~', "Bullet point");
-acs_getter!(acs_larrow, ',', "Left arrow");
-acs_getter!(acs_rarrow, '+', "Right arrow");
-acs_getter!(acs_darrow, '.', "Down arrow");
-acs_getter!(acs_uarrow, '-', "Up arrow");
-acs_getter!(acs_board, 'h', "??");
-acs_getter!(acs_lantern, 'i', "??");
-acs_getter!(acs_block, '0', "??");
-acs_getter!(acs_s3, 'p', "??");
-acs_getter!(acs_s7, 'r', "??");
-acs_getter!(acs_lequal, 'y', "Less-than or equal to.");
-acs_getter!(acs_gequal, 'z', "Greater-than or equal to.");
-acs_getter!(acs_nequal, '|', "Not-equal to.");
-acs_getter!(acs_pi, '{', "Pi");
-acs_getter!(acs_sterling, '}', "British pounds sterling.");
+impl Curses {
+  acs_getter!(acs_block, '0', "Solid square block, but sometimes a hash.");
+  acs_getter!(acs_board, 'h', "Board of squares, often just a hash.");
+  acs_getter!(acs_btee, 'v', "Bottom T");
+  acs_getter!(acs_bullet, '~', "Bullet point");
+  acs_getter!(acs_ckboard, 'a', "Checkerboard, usually like a 50% stipple");
+  acs_getter!(acs_darrow, '.', "Down arrow");
+  acs_getter!(acs_degree, 'f', "Degree symbol (like with an angle)");
+  acs_getter!(acs_diamond, '`', "Diamond");
+  acs_getter!(acs_gequal, 'z', "Greater-than or equal to.");
+  acs_getter!(acs_hline, 'q', "Horizontal line");
+  acs_getter!(acs_lantern, 'i', "Lantern symbol");
+  acs_getter!(acs_larrow, ',', "Left arrow");
+  acs_getter!(acs_lequal, 'y', "Less-than or equal to.");
+  acs_getter!(acs_llcorner, 'm', "Lower left corner of a box.");
+  acs_getter!(acs_lrcorner, 'j', "Lower right corner of a box.");
+  acs_getter!(acs_ltee, 't', "Left T");
+  acs_getter!(acs_nequal, '|', "Not-equal to.");
+  acs_getter!(acs_pi, '{', "Pi");
+  acs_getter!(acs_plminus, 'g', "Plus/Minus");
+  acs_getter!(acs_plus, 'n', "Plus shaped \"line\" in all four directions");
+  acs_getter!(acs_rarrow, '+', "Right arrow");
+  acs_getter!(acs_rtee, 'u', "Right T");
+  acs_getter!(acs_s1, 'o', "Horizontal Scanline 1");
+  acs_getter!(acs_s3, 'p', "Horizontal Scanline 3");
+  acs_getter!(acs_s7, 'r', "Horizontal Scanline 7");
+  acs_getter!(acs_s9, 's', "Horizontal Scanline 9");
+  acs_getter!(acs_sterling, '}', "British pounds sterling.");
+  acs_getter!(acs_ttee, 'w', "Top T");
+  acs_getter!(acs_uarrow, '-', "Up arrow");
+  acs_getter!(acs_ulcorner, 'l', "Upper left corner of a box.");
+  acs_getter!(acs_urcorner, 'k', "Upper right corner of a box.");
+  acs_getter!(acs_vline, 'x', "Vertical line");
+}
