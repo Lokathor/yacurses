@@ -2,6 +2,13 @@
 #![warn(missing_docs)]
 
 //! Yet another curses library.
+//!
+//! This crate binds to either the system [ncurses][1] on Unix (MIT-X11
+//! license), or a bundled [pdcurses][2] on Windows (public domain).
+//!
+//! [1]: https://invisible-island.net/ncurses/
+//!
+//! [2]: https://pdcurses.org/
 
 use core::{
   convert::{TryFrom, TryInto},
@@ -40,10 +47,10 @@ const KEY_C1: u32 = 0x1c7;
 const KEY_C2: u32 = 0x1c8;
 #[cfg(windows)]
 const KEY_C3: u32 = 0x1c9;
-// Note(Lokathor): shadows the entries from bind.rs
+// Note(Lokathor): shadows the entry from bind.rs
 #[cfg(windows)]
 const KEY_END: u32 = 0x166;
-// Note(Lokathor): shadows the entries from bind.rs
+// Note(Lokathor): shadows the entry from bind.rs
 #[cfg(windows)]
 const KEY_B2: u32 = 0x1c5;
 
@@ -626,54 +633,84 @@ impl Attributes {
   /// The text should stand out in some way.
   ///
   /// * Usually the same as `REVERSE`.
-  pub const STANDOUT: Attributes = Attributes(1 << 0);
+  pub const STANDOUT: Attributes = if cfg!(unix) {
+    Attributes(1 << 0)
+  } else {
+    Attributes(Attributes::REVERSE.0 | Attributes::BOLD.0)
+  };
 
   /// The text should be underlined.
   ///
   /// * Linux Console: No.
   /// * Terminal Emulator: Maybe.
-  pub const UNDERLINE: Attributes = Attributes(1 << 1);
+  pub const UNDERLINE: Attributes = if cfg!(unix) {
+    Attributes(1 << 1)
+  } else {
+    Attributes((0x00100000 >> 16) as u16)
+  };
 
-  /// The textshould have foreground and background colors reversed.
+  /// The text should have foreground and background colors reversed.
   ///
   /// * Works basically everywhere color does.
-  pub const REVERSE: Attributes = Attributes(1 << 2);
+  pub const REVERSE: Attributes = if cfg!(unix) {
+    Attributes(1 << 2)
+  } else {
+    Attributes((0x00200000 >> 16) as u16)
+  };
 
   /// The text should blink.
   ///
   /// * Linux Console: Visually distinct, but doesn't actually blink.
   /// * Terminal Emulator: Probably actually blinks.
-  pub const BLINK: Attributes = Attributes(1 << 3);
+  pub const BLINK: Attributes = if cfg!(unix) {
+    Attributes(1 << 3)
+  } else {
+    Attributes((0x00400000 >> 16) as u16)
+  };
 
   /// The text should be dim.
   ///
   /// * Linux Console: No.
   /// * Terminal Emulator: Maybe.
-  pub const DIM: Attributes = Attributes(1 << 4);
+  pub const DIM: Attributes =
+    if cfg!(unix) { Attributes(1 << 4) } else { Attributes(0) };
 
   /// The text should be bold.
   ///
   /// * Works basically everywhere color does.
-  pub const BOLD: Attributes = Attributes(1 << 5);
+  pub const BOLD: Attributes = if cfg!(unix) {
+    Attributes(1 << 5)
+  } else {
+    Attributes((0x00800000 >> 16) as u16)
+  };
 
   /// The text should use the alternative character set.
   ///
   /// * This always "works", in that you'll see the alternate character for the
   ///   given byte, but what actually displays is up to the terminal. Each ACS
   ///   character is named after the *intended* appearance, at least.
-  pub const ALT_CHAR_SET: Attributes = Attributes(1 << 6);
+  pub const ALT_CHAR_SET: Attributes = if cfg!(unix) {
+    Attributes(1 << 6)
+  } else {
+    Attributes((0x00010000 >> 16) as u16)
+  };
 
   /// The text should be invisible (foreground and background the same).
   ///
   /// * Linux Console: No.
   /// * Terminal Emulator: Maybe.
-  pub const INVIS: Attributes = Attributes(1 << 7);
+  pub const INVIS: Attributes =
+    if cfg!(unix) { Attributes(1 << 7) } else { Attributes(0) };
 
   /// The text should be italic.
   ///
   /// * Linux Console: No.
   /// * Terminal Emulator: Maybe.
-  pub const ITALIC: Attributes = Attributes(1 << 15);
+  pub const ITALIC: Attributes = if cfg!(unix) {
+    Attributes(1 << 15)
+  } else {
+    Attributes((0x00080000 >> 16) as u16)
+  };
 
   /*
   /// This would protect against "selective erase", not used in modern terminals.
@@ -809,9 +846,20 @@ unsafe fn ncurses_acs(c: char) -> u8 {
 macro_rules! acs_getter {
   ($fn_name:ident, $ch:expr, $d:expr) => {
     #[doc = $d]
+    #[cfg(unix)]
     pub fn $fn_name(&self) -> CursesGlyph {
       CursesGlyph {
         ascii: unsafe { ncurses_acs($ch) },
+        opt_color_pair: None,
+        attributes: Attributes::ALT_CHAR_SET,
+      }
+    }
+
+    #[doc = $d]
+    #[cfg(windows)]
+    pub fn $fn_name(&self) -> CursesGlyph {
+      CursesGlyph {
+        ascii: $ch as u8,
         opt_color_pair: None,
         attributes: Attributes::ALT_CHAR_SET,
       }
