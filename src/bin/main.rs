@@ -4,10 +4,11 @@ use yacurses::*;
 fn main() {
   let mut win = Curses::init();
   win.set_echo(false);
-  if win.can_change_colors () {
+  if win.can_change_colors() {
     win.set_color_id_rgb(ColorID::WHITE, [1.0, 1.0, 1.0]).unwrap();
   } else {
-    win.print_str("cannot change colors :(");
+    win.print_str("cannot change colors :( [press any key]");
+    win.poll_events().unwrap();
   }
   win.move_cursor(Position { x: 75, y: 1 });
   let ascii = b'@';
