@@ -1,3 +1,9 @@
+#[cfg(not(windows))]
+fn main() {
+  // pass
+}
+
+#[cfg(windows)]
 fn main() {
   let mut build = cc::Build::new();
 
