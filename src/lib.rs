@@ -4,11 +4,33 @@
 //! Yet another curses library.
 //!
 //! This crate binds to either the system [ncurses][1] on Unix (MIT-X11
-//! license), or a bundled [pdcurses][2] on Windows (public domain).
+//! license), or a bundled copy of [pdcurses][2] on Windows (public domain). It
+//! then exposes a somewhat rustified interface on top of curses.
+//!
+//! The interface offered is fully safe, but does not expose every single part
+//! of the curses API. For example, this only supports a single window, and it
+//! does not support any of the functions that print via format-string.
+//!
+//! The interface offered should be useful for the majority of cases.
 //!
 //! [1]: https://invisible-island.net/ncurses/
 //!
 //! [2]: https://pdcurses.org/
+//!
+//! ## Panic Messages
+//!
+//! The `yacurses` crate itself shouldn't ever panic, but if some other part of
+//! code panics while curses mode is active then the panic message will get
+//! eaten by curses mode when rust tries to print it to stderr (rust prints the
+//! panic info and *then* unwinds the stack, so curses mode is active when the
+//! printing happens). If your program terminates unexpectedly with no message,
+//! there's a reasonable chance that there was a panic but the message was eaten
+//! by curses mode.
+//!
+//! If you want to see panic messages, you'll need to run your program within a
+//! [`catch_unwind`](std::panic::catch_unwind) call and then print any panic
+//! message once curses mode has ended. There is a demo of how to do this (and
+//! other basic crate usage) in the `examples/` directory.
 
 use core::{
   convert::{TryFrom, TryInto},
