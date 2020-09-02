@@ -531,6 +531,8 @@ impl Curses {
 }
 
 /// A position on the screen.
+///
+/// The upper left corner is considered to be the (0,0) position.
 #[derive(Debug, Clone, Copy)]
 #[repr(C)]
 pub struct Position {
@@ -541,9 +543,6 @@ pub struct Position {
 }
 
 /// Used to return info about the upper bounds of the screen.
-///
-/// A struct because it's 2-dimensional instead of just a single length or
-/// whatever.
 #[derive(Debug, Clone, Copy)]
 #[repr(C)]
 pub struct TerminalSize {
