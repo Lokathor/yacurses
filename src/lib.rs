@@ -3,16 +3,43 @@
 
 //! Yet another curses library.
 
-use core::convert::TryFrom;
 use core::{
-  convert::TryInto,
+  convert::{TryFrom, TryInto},
+  num::NonZeroU8,
   ops::*,
   sync::atomic::{AtomicBool, Ordering},
 };
-use core::num::NonZeroU8;
 
+#[cfg_attr(windows, allow(dead_code))]
 mod bind;
 use bind::*;
+
+const PADSLASH: u32 = 0x1ca;
+const PADENTER: u32 = 0x1cb;
+const PADSTAR: u32 = 0x1cf;
+const PADMINUS: u32 = 0x1d0;
+const PADPLUS: u32 = 0x1d1;
+// Note(Lokathor): shadows the entries from bind.rs
+#[cfg(windows)]
+const KEY_END: u32 = 0x166;
+#[cfg(windows)]
+const KEY_A1: u32 = 0x1c1;
+#[cfg(windows)]
+const KEY_A2: u32 = 0x1c2;
+#[cfg(windows)]
+const KEY_A3: u32 = 0x1c3;
+#[cfg(windows)]
+const KEY_B1: u32 = 0x1c4;
+#[cfg(windows)]
+const KEY_B2: u32 = 0x1c5;
+#[cfg(windows)]
+const KEY_B3: u32 = 0x1c6;
+#[cfg(windows)]
+const KEY_C1: u32 = 0x1c7;
+#[cfg(windows)]
+const KEY_C2: u32 = 0x1c8;
+#[cfg(windows)]
+const KEY_C3: u32 = 0x1c9;
 
 /// We're doing an unsafe call, then turning the `c_int` into a `Result`.
 macro_rules! unsafe_call_result {
@@ -26,7 +53,8 @@ macro_rules! unsafe_call_result {
 }
 
 /// We're doing an unsafe call that is documented to never error.
-/// Just to be sure, we will at least `debug_assert` that we didn't get an error.
+/// Just to be sure, we will at least `debug_assert` that we didn't get an
+/// error.
 macro_rules! unsafe_always_ok {
   ($func:ident($($tree:tt)*)) => {{
     let ret = unsafe { $func($($tree)*) };
@@ -65,8 +93,8 @@ impl Curses {
   ///
   /// ## Panics
   /// * If you double-initialize curses this will panic.
-  /// * If your previous curses handle has been dropped it **is** legal to init another one.
-  ///   Curses mode will resume just fine.
+  /// * If your previous curses handle has been dropped it **is** legal to init
+  ///   another one. Curses mode will resume just fine.
   /// ## Other
   /// * If this fails on the curses side, curses will "helpfully" print an error
   ///   and abort the process for you.
@@ -86,12 +114,12 @@ impl Curses {
         let _ = unsafe_call_result!(start_color());
         // this only fails if curses isn't init or the ptr is null, so it should
         // never fail here since we checked for null already. However, if it
-        // somehow does fail anyway, then the worst that happens is that the user
-        // can't use the keypad keys.
+        // somehow does fail anyway, then the worst that happens is that the
+        // user can't use the keypad keys.
         let _ = unsafe_call_result!(keypad(win.ptr, true));
         // We always want to operate in cbreak mode, so set it here and don't
-        // expose this option to the user. In this case, if `cbreak` isn't set then
-        // things will be weird as hell, so we panic on failure.
+        // expose this option to the user. In this case, if `cbreak` isn't set
+        // then things will be weird as hell, so we panic on failure.
         unsafe_call_result!(cbreak()).expect("Couldn't set `cbreak` mode.");
         win
       }
@@ -99,12 +127,12 @@ impl Curses {
       panic!("Curses is already active.")
     }
   }
-  
+
   /// Pushes all updates out to the physical screen, refreshing the display.
   pub fn refresh(&mut self) -> Result<(), ()> {
     unsafe_call_result!(wrefresh(self.ptr))
   }
-  
+
   /// Sets if user inputs should automatically echo to the screen or not.
   ///
   /// * Initially this is enabled.
@@ -115,14 +143,14 @@ impl Curses {
       unsafe_call_result!(noecho())
     }
   }
-  
+
   /// Get the cursor's current row and column.
   pub fn get_cursor_position(&self) -> Position {
     let x = unsafe { getcurx(self.ptr) as u32 };
     let y = unsafe { getcury(self.ptr) as u32 };
     Position { x, y }
   }
-  
+
   /// Get the size of the terminal.
   ///
   /// Cursor positions can range in `0..COUNT` in each dimension.
@@ -131,7 +159,7 @@ impl Curses {
     let y_count = unsafe { getmaxy(self.ptr) as u32 };
     TerminalSize { x_count, y_count }
   }
-  
+
   /// Move the cursor to the position given.
   pub fn move_cursor(&mut self, p: Position) -> Result<(), ()> {
     unsafe_call_result!(wmove(self.ptr, p.y as _, p.x as _))
@@ -144,18 +172,23 @@ impl Curses {
   pub fn print_ch<C: Into<CursesGlyph>>(&mut self, c: C) -> Result<(), ()> {
     unsafe_call_result!(waddch(self.ptr, c.into().as_chtype()))
   }
-  
+
   /// Prints the str given, advancing the cursor.
   ///
-  /// This is identical to calling [`print_ch`](Curses::print_ch) on every byte in `s`.
-  /// If your `&str` has non-ascii data you'll get garbage on the screen.
+  /// This is identical to calling [`print_ch`](Curses::print_ch) on every byte
+  /// in `s`. If your `&str` has non-ascii data you'll get garbage on the
+  /// screen.
   ///
   /// * Wraps to the next line if in the final col.
   /// * Will scroll the terminal if in the final row, if scrolling is enabled.
   pub fn print_str(&mut self, s: &str) -> Result<(), ()> {
-    unsafe_call_result!(waddnstr(self.ptr, s.as_ptr().cast(), s.len().try_into().unwrap()))
+    unsafe_call_result!(waddnstr(
+      self.ptr,
+      s.as_ptr().cast(),
+      s.len().try_into().unwrap()
+    ))
   }
-  
+
   /// Inserts the given character under the cursor.
   ///
   /// * The cursor doesn't move.
@@ -164,7 +197,7 @@ impl Curses {
   pub fn insert_ch<C: Into<CursesGlyph>>(&mut self, c: C) -> Result<(), ()> {
     unsafe_call_result!(winsch(self.ptr, c.into().as_chtype()))
   }
-  
+
   /// Deleted character under the cursor.
   ///
   /// * The cursor doesn't move.
@@ -173,22 +206,28 @@ impl Curses {
   pub fn delete_ch(&mut self) -> Result<(), ()> {
     unsafe_call_result!(wdelch(self.ptr))
   }
-  
+
   /// Copies the slice of glyphs starting from the cursor position.
   ///
   /// * Does not advance the cursor.
   /// * Does not wrap the content to the next line.
   pub fn copy_glyphs(&mut self, s: &[CursesGlyph]) -> Result<(), ()> {
-    unsafe_call_result!(waddchnstr(self.ptr, s.as_ptr().cast(), s.len().try_into().unwrap()))
+    unsafe_call_result!(waddchnstr(
+      self.ptr,
+      s.as_ptr().cast(),
+      s.len().try_into().unwrap()
+    ))
   }
-  
+
   /// Clears the entire screen and moves the cursor to `(0,0)`.
   pub fn clear(&mut self) -> Result<(), ()> {
     unsafe_call_result!(wclear(self.ptr))
   }
-  
+
   /// Set the given attribute bits to be on or off.
-  pub fn set_attributes(&mut self, attr: Attributes, on: bool) -> Result<(), ()> {
+  pub fn set_attributes(
+    &mut self, attr: Attributes, on: bool,
+  ) -> Result<(), ()> {
     let attr: i32 = ((attr.0 as u32) << 16) as i32;
     if on {
       unsafe_call_result!(wattron(self.ptr, attr))
@@ -196,11 +235,12 @@ impl Curses {
       unsafe_call_result!(wattroff(self.ptr, attr))
     }
   }
-  
+
   /// Assigns the timeout to use with [`poll_events`](Curses::poll_events).
   ///
   /// * Negative: infinite time, `poll_events` is blocking.
-  /// * Zero: No timeout, `poll_events` returns `None` immediately if no input is ready.
+  /// * Zero: No timeout, `poll_events` returns `None` immediately if no input
+  ///   is ready.
   /// * Positive: wait up to this many milliseconds before returning `None`.
   pub fn set_timeout(&mut self, time: i32) {
     unsafe_void!(wtimeout(self.ptr, time))
@@ -210,42 +250,48 @@ impl Curses {
   ///
   /// * Ascii keys are returned as their ascii value.
   /// * Keypad keys are values >= 256.
-  /// * If the terminal is resized, that shows up as a special key in this queue.
+  /// * If the terminal is resized, that shows up as a special key in this
+  ///   queue.
   /// * If you have a timeout set and the time expires, you get `None` back.
   pub fn poll_events(&mut self) -> Option<CursesKey> {
     const ERR_U32: u32 = ERR as u32;
     const KEY_F64: u32 = KEY_F0 + 64;
     match (unsafe { wgetch(self.ptr) }) as u32 {
       ERR_U32 => None,
-      ascii if (ascii <= u8::MAX as u32) => {
-        Some(CursesKey::Ascii(ascii as u8))
-      },
+      ascii if (ascii <= u8::MAX as u32) => Some(CursesKey::Ascii(ascii as u8)),
+      KEY_ENTER | PADENTER => Some(CursesKey::Enter),
       KEY_BACKSPACE => Some(CursesKey::Backspace),
-      KEY_UP => Some(CursesKey::ArrowUp),
-      KEY_DOWN => Some(CursesKey::ArrowDown),
-      KEY_LEFT => Some(CursesKey::ArrowLeft),
-      KEY_RIGHT => Some(CursesKey::ArrowRight),
+      KEY_A1 | KEY_HOME => Some(CursesKey::Home),
+      KEY_A2 | KEY_UP => Some(CursesKey::ArrowUp),
+      KEY_A3 | KEY_PPAGE => Some(CursesKey::PageUp),
+      KEY_B1 | KEY_LEFT => Some(CursesKey::ArrowLeft),
+      KEY_B2 => Some(CursesKey::Keypad5NoNumlock),
+      KEY_B3 | KEY_RIGHT => Some(CursesKey::ArrowRight),
+      KEY_C1 | KEY_END => Some(CursesKey::End),
+      KEY_C2 | KEY_DOWN => Some(CursesKey::ArrowDown),
+      KEY_C3 | KEY_NPAGE => Some(CursesKey::PageDown),
       KEY_IC => Some(CursesKey::Insert),
       KEY_DC => Some(CursesKey::Delete),
-      KEY_HOME => Some(CursesKey::Home),
-      KEY_END => Some(CursesKey::End),
-      KEY_PPAGE => Some(CursesKey::PageUp),
-      KEY_NPAGE => Some(CursesKey::PageDown),
-      KEY_B2 => Some(CursesKey::Keypad5NoNumlock),
       KEY_RESIZE => Some(CursesKey::TerminalResized),
+      PADSLASH => Some(CursesKey::Ascii(b'/')),
+      PADSTAR => Some(CursesKey::Ascii(b'*')),
+      PADMINUS => Some(CursesKey::Ascii(b'-')),
+      PADPLUS => Some(CursesKey::Ascii(b'+')),
       f if (f >= KEY_F0 && f <= KEY_F64) => {
-        Some(CursesKey::Function((f-KEY_F0) as u8))
-      },
+        Some(CursesKey::Function((f - KEY_F0) as u8))
+      }
       other => Some(CursesKey::UnknownKey(other)),
     }
   }
-  
-  /// Pushes this event to the front of the event queue so that the next `poll_events` returns this value.
+
+  /// Pushes this event to the front of the event queue so that the next
+  /// `poll_events` returns this value.
   pub fn un_get_event(&mut self, event: Option<CursesKey>) -> Result<(), ()> {
     let ev: u32 = match event {
       None => ERR as u32,
       Some(CursesKey::Ascii(ascii)) => ascii as u32,
       Some(CursesKey::Function(f)) => KEY_F0 + (f as u32),
+      Some(CursesKey::Enter) => KEY_ENTER,
       Some(CursesKey::Backspace) => KEY_BACKSPACE,
       Some(CursesKey::ArrowUp) => KEY_UP,
       Some(CursesKey::ArrowDown) => KEY_DOWN,
@@ -263,7 +309,7 @@ impl Curses {
     };
     unsafe_call_result!(ungetch(ev as i32))
   }
-  
+
   /// Flushes all pending key events.
   pub fn flush_events(&mut self) -> Result<(), ()> {
     unsafe_call_result!(flushinp())
@@ -272,102 +318,122 @@ impl Curses {
   /// Return the terminal to shell mode temporarily.
   pub fn shell_mode<'a>(&'a mut self) -> Result<CursesShell<'a>, ()> {
     unsafe_always_ok!(def_prog_mode());
-    unsafe_call_result!(endwin()).map(move |_|{
-      CursesShell { win: self }
-    })
+    unsafe_call_result!(endwin()).map(move |_| CursesShell { win: self })
   }
-  
+
   /// If the terminal supports colors at all.
   pub fn has_color(&self) -> bool {
     unsafe { has_colors() }
   }
-  
+
   /// If the terminal is able to change the RGB values of a given [`ColorID`]
   pub fn can_change_colors(&self) -> bool {
     unsafe { can_change_color() }
   }
-  
+
   /// Gets the highest allowed color id for this terminal.
   pub fn get_max_color_id_inclusive(&self) -> Option<ColorID> {
     let colors = unsafe { COLORS };
     if colors > 0 {
-      Some(ColorID(unsafe { (COLORS-1).try_into().unwrap_or(u8::MAX) }))
+      Some(ColorID(unsafe { (COLORS - 1).try_into().unwrap_or(u8::MAX) }))
     } else {
       None
     }
   }
-  
+
   /// Gets the highest allowed color pair for this terminal.
   pub fn get_max_color_pair_inclusive(&self) -> Option<ColorPair> {
-    NonZeroU8::new(unsafe { (COLOR_PAIRS-1).try_into().unwrap_or(u8::MAX) }).map(ColorPair)
+    NonZeroU8::new(unsafe { (COLOR_PAIRS - 1).try_into().unwrap_or(u8::MAX) })
+      .map(ColorPair)
   }
-  
-  /// Sets the color id to use the RGB values given, or closest approximation available.
+
+  /// Sets the color id to use the RGB values given, or closest approximation
+  /// available.
   ///
   /// Inputs are clamped to the range `0.0 ..= 1.0`
-  pub fn set_color_id_rgb(&mut self, c: ColorID, [r, g, b]: [f32; 3]) -> Result<(), ()> {
+  pub fn set_color_id_rgb(
+    &mut self, c: ColorID, [r, g, b]: [f32; 3],
+  ) -> Result<(), ()> {
     let r_i16 = (r.max(0.0).min(1.0) * 1000.0) as i16;
     let g_i16 = (g.max(0.0).min(1.0) * 1000.0) as i16;
     let b_i16 = (b.max(0.0).min(1.0) * 1000.0) as i16;
     unsafe_call_result!(init_color(c.0.into(), r_i16, g_i16, b_i16))
   }
-  
+
   /// Gets the RGB values of the given color id.
   pub fn get_color_id_rgb(&self, c: ColorID) -> Result<[f32; 3], ()> {
     let mut r_i16 = 0;
     let mut g_i16 = 0;
     let mut b_i16 = 0;
-    unsafe_call_result!(color_content(c.0.into(), &mut r_i16, &mut g_i16, &mut b_i16)).map(|_| {
+    unsafe_call_result!(color_content(
+      c.0.into(),
+      &mut r_i16,
+      &mut g_i16,
+      &mut b_i16
+    ))
+    .map(|_| {
       let r = r_i16 as f32 / 1000.0;
       let g = g_i16 as f32 / 1000.0;
       let b = b_i16 as f32 / 1000.0;
-      [r,g,b]
+      [r, g, b]
     })
   }
-  
-  /// Assigns the selected color pair to use the foreground and background specified.
+
+  /// Assigns the selected color pair to use the foreground and background
+  /// specified.
   ///
-  /// A character cell is associated to a given color pair, so changing any color pair will
-  /// immediately change all character cells displaying the color pair.
-  pub fn set_color_pair_content(&mut self, pair: ColorPair, fg: ColorID, bg: ColorID) -> Result<(), ()> {
-    unsafe_call_result!(init_pair(pair.0.get().into(), fg.0.into(), bg.0.into()))
+  /// A character cell is associated to a given color pair, so changing any
+  /// color pair will immediately change all character cells displaying the
+  /// color pair.
+  pub fn set_color_pair_content(
+    &mut self, pair: ColorPair, fg: ColorID, bg: ColorID,
+  ) -> Result<(), ()> {
+    unsafe_call_result!(init_pair(
+      pair.0.get().into(),
+      fg.0.into(),
+      bg.0.into()
+    ))
   }
-  
+
   /// Gets the RGB values of the given color id.
-  pub fn get_color_pair_content(&self, c: ColorID) -> Result<(ColorID, ColorID), ()> {
+  pub fn get_color_pair_content(
+    &self, c: ColorID,
+  ) -> Result<(ColorID, ColorID), ()> {
     let mut f_i16 = 0;
     let mut b_i16 = 0;
-    unsafe_call_result!(pair_content(c.0.into(), &mut f_i16, &mut b_i16)).and_then(|_|{
-      match (u8::try_from(f_i16), u8::try_from(b_i16)) {
+    unsafe_call_result!(pair_content(c.0.into(), &mut f_i16, &mut b_i16))
+      .and_then(|_| match (u8::try_from(f_i16), u8::try_from(b_i16)) {
         (Ok(f), Ok(b)) => Ok((ColorID(f), ColorID(b))),
-        _ => Err(())
-      }
-    })
+        _ => Err(()),
+      })
   }
-  
+
   /// Sets the default coloring for all newly printed glyphs.
-  pub fn set_active_color_pair(&mut self, opt_pair: Option<ColorPair>) -> Result<(), ()> {
-    let p = opt_pair.map(|cp|cp.0.get()).unwrap_or(0).into();
+  pub fn set_active_color_pair(
+    &mut self, opt_pair: Option<ColorPair>,
+  ) -> Result<(), ()> {
+    let p = opt_pair.map(|cp| cp.0.get()).unwrap_or(0).into();
     unsafe_call_result!(wcolor_set(self.ptr, p, core::ptr::null_mut()))
   }
-  
+
   /// Set if the window can be scrolled or not.
   ///
   /// * Off by default.
   pub fn set_scrollable(&mut self, yes: bool) -> Result<(), ()> {
     unsafe_call_result!(scrollok(self.ptr, yes))
   }
-  
-  /// Sets the top line and bottom line that mark the edges of the scrollable region.
+
+  /// Sets the top line and bottom line that mark the edges of the scrollable
+  /// region.
   ///
-  /// Lines `0..=top` and `bottom..` will stay static when the window is scrolled.
-  /// All other lines will move 1 row upward.
+  /// Lines `0..=top` and `bottom..` will stay static when the window is
+  /// scrolled. All other lines will move 1 row upward.
   ///
   /// * By default the scroll region is the entire terminal.
   pub fn set_scroll_region(&mut self, top: u32, bottom: u32) -> Result<(), ()> {
     unsafe_call_result!(wsetscrreg(self.ptr, top as i32, bottom as i32))
   }
-  
+
   /// Scrolls the window by the given number of lines.
   ///
   /// * Negative: text moves down the page.
@@ -376,11 +442,13 @@ impl Curses {
   pub fn scroll(&mut self, n: i32) -> Result<(), ()> {
     unsafe_call_result!(wscrl(self.ptr, n))
   }
-  
+
   /// Sets the cursor visibility.
-  /// 
+  ///
   /// Returns the old visibility, or Err if it can't be set.
-  pub fn set_cursor_visibility(&mut self, vis: CursorVisibility) -> Result<CursorVisibility, ()> {
+  pub fn set_cursor_visibility(
+    &mut self, vis: CursorVisibility,
+  ) -> Result<CursorVisibility, ()> {
     let old = unsafe { curs_set(vis as i32) };
     Ok(match old {
       0 => CursorVisibility::Invisible,
@@ -389,12 +457,14 @@ impl Curses {
       _ => return Err(()),
     })
   }
-  
+
   /// Sets the background glyph.
-  pub fn set_background<C: Into<CursesGlyph>>(&mut self, c: C) -> Result<(), ()> {
+  pub fn set_background<C: Into<CursesGlyph>>(
+    &mut self, c: C,
+  ) -> Result<(), ()> {
     unsafe_call_result!(wbkgd(self.ptr, c.into().as_chtype()))
   }
-  
+
   /// Gets the background glyph.
   pub fn get_background(&self) -> CursesGlyph {
     unsafe { core::mem::transmute(getbkgd(self.ptr)) }
@@ -413,7 +483,8 @@ pub struct Position {
 
 /// Used to return info about the upper bounds of the screen.
 ///
-/// A struct because it's 2-dimensional instead of just a single length or whatever.
+/// A struct because it's 2-dimensional instead of just a single length or
+/// whatever.
 #[derive(Debug, Clone, Copy)]
 #[repr(C)]
 pub struct TerminalSize {
@@ -430,10 +501,10 @@ pub struct TerminalSize {
 pub struct CursesGlyph {
   /// The text to show (`0..128`)
   pub ascii: u8,
-  
+
   /// The color pairing to use, if any.
   pub opt_color_pair: Option<ColorPair>,
-  
+
   /// The other attributes to use.
   pub attributes: Attributes,
 }
@@ -468,12 +539,16 @@ pub enum CursorVisibility {
 
 /// Names a color within curses.
 ///
-/// This is **not** an actual RGB color value. It's just an index into a color palette.
-/// * Assuming that a terminal supports color at all, you usually get at least 8 palette slots.
-/// * The linux console generally has only 8 colors, but terminal emulators often have far more.
+/// This is **not** an actual RGB color value. It's just an index into a color
+/// palette.
+/// * Assuming that a terminal supports color at all, you usually get at least 8
+///   palette slots.
+/// * The linux console generally has only 8 colors, but terminal emulators
+///   often have far more.
 ///
 /// This type has some associated constants.
-/// Each constant names the id value that is most likely to display as that color by default.
+/// Each constant names the id value that is most likely to display as that
+/// color by default.
 #[derive(Debug, Clone, Copy)]
 #[repr(transparent)]
 pub struct ColorID(pub u8);
@@ -492,16 +567,19 @@ impl ColorID {
 /// Names a foreground / background color pairing within curses.
 ///
 /// Curses remembers a color pair id for each character cell in the terminal.
-/// Each color pair maps to a foreground color and background color id palette value.
-/// The pair id is a single byte, but 0 is a special "no color" value.
-/// It uses whatever the terminal's default colors were before curses was initialized.
-/// Accordingly, we model the color pair in Rust as a NonZeroU8, and wrap it in an Option as appropriate.
+/// Each color pair maps to a foreground color and background color id palette
+/// value. The pair id is a single byte, but 0 is a special "no color" value.
+/// It uses whatever the terminal's default colors were before curses was
+/// initialized. Accordingly, we model the color pair in Rust as a NonZeroU8,
+/// and wrap it in an Option as appropriate.
 ///
-/// You can generally change what color ids that are associated with a color pair id.
-/// The number of color pairs actually available varies by terminal, though generally at least 64 are supported.
+/// You can generally change what color ids that are associated with a color
+/// pair id. The number of color pairs actually available varies by terminal,
+/// though generally at least 64 are supported.
 ///
-/// If you change the colors of a color pair, all character cells on the screen using that pairing will
-/// have their displayed colors immediately changed accordingly.
+/// If you change the colors of a color pair, all character cells on the screen
+/// using that pairing will have their displayed colors immediately changed
+/// accordingly.
 #[derive(Debug, Clone, Copy)]
 #[repr(transparent)]
 pub struct ColorPair(pub NonZeroU8);
@@ -519,54 +597,54 @@ impl Attributes {
   ///
   /// * Usually the same as `REVERSE`.
   pub const STANDOUT: Attributes = Attributes(1 << 0);
-  
+
   /// The text should be underlined.
   ///
   /// * Linux Console: No.
   /// * Terminal Emulator: Maybe.
   pub const UNDERLINE: Attributes = Attributes(1 << 1);
-  
+
   /// The textshould have foreground and background colors reversed.
   ///
   /// * Works basically everywhere color does.
   pub const REVERSE: Attributes = Attributes(1 << 2);
-  
+
   /// The text should blink.
   ///
   /// * Linux Console: Visually distinct, but doesn't actually blink.
   /// * Terminal Emulator: Probably actually blinks.
   pub const BLINK: Attributes = Attributes(1 << 3);
-  
+
   /// The text should be dim.
   ///
   /// * Linux Console: No.
   /// * Terminal Emulator: Maybe.
   pub const DIM: Attributes = Attributes(1 << 4);
-  
+
   /// The text should be bold.
   ///
   /// * Works basically everywhere color does.
   pub const BOLD: Attributes = Attributes(1 << 5);
-  
+
   /// The text should use the alternative character set.
   ///
-  /// * This always "works", in that you'll see the alternate character for
-  ///   the given byte, but what actually displays is up to the terminal.
-  ///   Each ACS character is named after the *intended* appearance, at least.
+  /// * This always "works", in that you'll see the alternate character for the
+  ///   given byte, but what actually displays is up to the terminal. Each ACS
+  ///   character is named after the *intended* appearance, at least.
   pub const ALT_CHAR_SET: Attributes = Attributes(1 << 6);
-  
+
   /// The text should be invisible (foreground and background the same).
   ///
   /// * Linux Console: No.
   /// * Terminal Emulator: Maybe.
   pub const INVIS: Attributes = Attributes(1 << 7);
-  
+
   /// The text should be italic.
   ///
   /// * Linux Console: No.
   /// * Terminal Emulator: Maybe.
   pub const ITALIC: Attributes = Attributes(1 << 15);
-  
+
   /*
   /// This would protect against "selective erase", not used in modern terminals.
   pub const PROTECT: Attributes = Attributes(1 << 8);
@@ -625,6 +703,8 @@ pub enum CursesKey {
   Ascii(u8),
   /// The terminal was resized.
   TerminalResized,
+  /// Enter key
+  Enter,
   /// Backspace key
   Backspace,
   /// Arrow upward (arrow key or numpad without numlock)
@@ -651,7 +731,8 @@ pub enum CursesKey {
   Keypad5NoNumlock,
   /// A function key (F1, F2, etc.).
   ///
-  /// These aren't the best supported because the terminal emulator often eat them before the program sees it.
+  /// These aren't the best supported because the terminal emulator often eat
+  /// them before the program sees it.
   Function(u8),
   /// Some unknown input value.
   ///
@@ -683,11 +764,11 @@ impl<'a> Drop for CursesShell<'a> {
   }
 }
 impl<'a> Deref for CursesShell<'a> {
-    type Target = Curses;
-    #[inline]
-    fn deref(&self) -> &Self::Target {
-      self.win
-    }
+  type Target = Curses;
+  #[inline]
+  fn deref(&self) -> &Self::Target {
+    self.win
+  }
 }
 
 /// This is how you check the ACS map in general. Specific usages are below.
