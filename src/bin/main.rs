@@ -4,7 +4,11 @@ use yacurses::*;
 fn main() {
   let mut win = Curses::init();
   win.set_echo(false);
-  win.set_color_id_rgb(ColorID::WHITE, [1.0, 1.0, 1.0]).unwrap();
+  if win.can_change_colors() {
+    win.set_color_id_rgb(ColorID::WHITE, [1.0, 1.0, 1.0]).unwrap();
+  } else {
+    win.print_str("This terminal cannot change colors :(");
+  }
   win.move_cursor(Position { x: 75, y: 1 });
   let ascii = b'@';
   let opt_color_pair = None;

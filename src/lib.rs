@@ -10,8 +10,42 @@ use core::{
   sync::atomic::{AtomicBool, Ordering},
 };
 
+#[cfg_attr(windows, allow(dead_code))]
 mod bind;
 use bind::*;
+
+#[cfg(windows)]
+const PADSLASH: u32 = 0x1ca;
+#[cfg(windows)]
+const PADENTER: u32 = 0x1cb;
+#[cfg(windows)]
+const PADSTAR: u32 = 0x1cf;
+#[cfg(windows)]
+const PADMINUS: u32 = 0x1d0;
+#[cfg(windows)]
+const PADPLUS: u32 = 0x1d1;
+#[cfg(windows)]
+const KEY_A1: u32 = 0x1c1;
+#[cfg(windows)]
+const KEY_A2: u32 = 0x1c2;
+#[cfg(windows)]
+const KEY_A3: u32 = 0x1c3;
+#[cfg(windows)]
+const KEY_B1: u32 = 0x1c4;
+#[cfg(windows)]
+const KEY_B3: u32 = 0x1c6;
+#[cfg(windows)]
+const KEY_C1: u32 = 0x1c7;
+#[cfg(windows)]
+const KEY_C2: u32 = 0x1c8;
+#[cfg(windows)]
+const KEY_C3: u32 = 0x1c9;
+// Note(Lokathor): shadows the entries from bind.rs
+#[cfg(windows)]
+const KEY_END: u32 = 0x166;
+// Note(Lokathor): shadows the entries from bind.rs
+#[cfg(windows)]
+const KEY_B2: u32 = 0x1c5;
 
 /// We're doing an unsafe call, then turning the `c_int` into a `Result`.
 macro_rules! unsafe_call_result {
@@ -231,6 +265,33 @@ impl Curses {
     match (unsafe { wgetch(self.ptr) }) as u32 {
       ERR_U32 => None,
       ascii if (ascii <= u8::MAX as u32) => Some(CursesKey::Ascii(ascii as u8)),
+      #[cfg(windows)]
+      KEY_A1 => Some(CursesKey::Home),
+      #[cfg(windows)]
+      KEY_A2 => Some(CursesKey::ArrowUp),
+      #[cfg(windows)]
+      KEY_A3 => Some(CursesKey::PageUp),
+      #[cfg(windows)]
+      KEY_B1 => Some(CursesKey::ArrowLeft),
+      #[cfg(windows)]
+      KEY_B3 => Some(CursesKey::ArrowRight),
+      #[cfg(windows)]
+      KEY_C1 => Some(CursesKey::End),
+      #[cfg(windows)]
+      KEY_C2 => Some(CursesKey::ArrowDown),
+      #[cfg(windows)]
+      KEY_C3 => Some(CursesKey::PageDown),
+      #[cfg(windows)]
+      PADENTER => Some(CursesKey::Enter),
+      #[cfg(windows)]
+      PADSLASH => Some(CursesKey::Ascii(b'/')),
+      #[cfg(windows)]
+      PADSTAR => Some(CursesKey::Ascii(b'*')),
+      #[cfg(windows)]
+      PADMINUS => Some(CursesKey::Ascii(b'-')),
+      #[cfg(windows)]
+      PADPLUS => Some(CursesKey::Ascii(b'+')),
+      //
       KEY_BACKSPACE => Some(CursesKey::Backspace),
       KEY_UP => Some(CursesKey::ArrowUp),
       KEY_DOWN => Some(CursesKey::ArrowDown),
@@ -244,6 +305,8 @@ impl Curses {
       KEY_NPAGE => Some(CursesKey::PageDown),
       KEY_B2 => Some(CursesKey::Keypad5NoNumlock),
       KEY_RESIZE => Some(CursesKey::TerminalResized),
+      KEY_ENTER => Some(CursesKey::Enter),
+      //
       f if (f >= KEY_F0 && f <= KEY_F64) => {
         Some(CursesKey::Function((f - KEY_F0) as u8))
       }
@@ -258,6 +321,7 @@ impl Curses {
       None => ERR as u32,
       Some(CursesKey::Ascii(ascii)) => ascii as u32,
       Some(CursesKey::Function(f)) => KEY_F0 + (f as u32),
+      Some(CursesKey::Enter) => KEY_ENTER,
       Some(CursesKey::Backspace) => KEY_BACKSPACE,
       Some(CursesKey::ArrowUp) => KEY_UP,
       Some(CursesKey::ArrowDown) => KEY_DOWN,
@@ -669,6 +733,8 @@ pub enum CursesKey {
   Ascii(u8),
   /// The terminal was resized.
   TerminalResized,
+  /// Enter key
+  Enter,
   /// Backspace key
   Backspace,
   /// Arrow upward (arrow key or numpad without numlock)
