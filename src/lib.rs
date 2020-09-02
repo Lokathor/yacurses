@@ -18,8 +18,8 @@ use core::{
 };
 
 #[cfg_attr(windows, allow(dead_code))]
-mod bind;
-use bind::*;
+mod ncurses_bind;
+use ncurses_bind::*;
 
 #[cfg(windows)]
 const PADSLASH: u32 = 0x1ca;

@@ -1,7 +1,8 @@
 #!/bin/sh
 bindgen --disable-name-namespacing --impl-debug --no-doc-comments \
  --no-layout-tests --no-prepend-enum-name --size_t-is-usize --use-core \
- --ctypes-prefix chlorine --output src/bind.rs \
+ --ctypes-prefix chlorine \
+ --output src/ncurses_bind.rs \
  --raw-line '#![allow(bad_style)]' \
  --raw-line '#[cfg_attr(unix, link(name = "ncurses"))]' \
  --raw-line '#[cfg_attr(windows, link(name = "pdcurses"))]' \
