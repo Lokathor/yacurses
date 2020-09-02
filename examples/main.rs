@@ -1,10 +1,21 @@
 use yacurses::*;
 
+use std::panic::{catch_unwind, AssertUnwindSafe};
+
 #[allow(unused)]
 fn main() {
-  let mut outer_win = Curses::init();
-  let mut win = std::panic::AssertUnwindSafe(&mut outer_win);
-  let catch_result = std::panic::catch_unwind(move || {
+  // This will rust-panic on double-init, and on failure in the C layer the C
+  // code will "helpfully" print the error message and abort the process.
+  // Otherwise, this "always succeeds".
+  let mut win = Curses::init();
+
+  // If you panic normally while in curses mode, the panic message "prints" (and
+  // is eaten by curses mode) *before* the unwinding that ends curses mode.
+  // Accordingly, we must use `catch_unwind` to catch the panic instead of
+  // printing it immediately. Because we're transferring the `&mut Curses`
+  // across the panic bound, we put `AssertUnwindSafe` over our closure or rustc
+  // gets jumpy about things possibly going wrong.
+  let catch_result = catch_unwind(AssertUnwindSafe(|| {
     win.set_echo(false);
     win.set_cursor_visibility(CursorVisibility::Invisible);
     if win.can_change_colors() {
@@ -87,9 +98,13 @@ fn main() {
       win.print_ch(ch);
     }
     win.poll_events().unwrap();
-  });
+  }));
+
+  // After we run `catch_unwind`, if we had a panic we change the window to
+  // shell mode (which causes stdout/stderr to work normally) and then we
+  // continue the panic with whatever the cause from before was.
   if let Err(cause) = catch_result {
-    let sh = outer_win.shell_mode().unwrap();
+    let sh = win.shell_mode().unwrap();
     panic!(cause)
   }
 }
