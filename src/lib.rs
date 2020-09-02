@@ -26,18 +26,26 @@ const KEY_END: u32 = 0x166;
 const KEY_A1: u32 = 0x1c1;
 #[cfg(windows)]
 const KEY_A2: u32 = 0x1c2;
+#[cfg(not(windows))]
+const KEY_A2: u32 = u32::MAX - 0xA2;
 #[cfg(windows)]
 const KEY_A3: u32 = 0x1c3;
 #[cfg(windows)]
 const KEY_B1: u32 = 0x1c4;
+#[cfg(not(windows))]
+const KEY_B1: u32 = u32::MAX - 0xB1;
 #[cfg(windows)]
 const KEY_B2: u32 = 0x1c5;
 #[cfg(windows)]
 const KEY_B3: u32 = 0x1c6;
+#[cfg(not(windows))]
+const KEY_B3: u32 = u32::MAX - 0xB3;
 #[cfg(windows)]
 const KEY_C1: u32 = 0x1c7;
 #[cfg(windows)]
 const KEY_C2: u32 = 0x1c8;
+#[cfg(not(windows))]
+const KEY_C2: u32 = u32::MAX - 0xC2;
 #[cfg(windows)]
 const KEY_C3: u32 = 0x1c9;
 
