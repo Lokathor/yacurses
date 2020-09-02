@@ -26,26 +26,18 @@ const KEY_END: u32 = 0x166;
 const KEY_A1: u32 = 0x1c1;
 #[cfg(windows)]
 const KEY_A2: u32 = 0x1c2;
-#[cfg(not(windows))]
-const KEY_A2: u32 = u32::MAX - 0xA2;
 #[cfg(windows)]
 const KEY_A3: u32 = 0x1c3;
 #[cfg(windows)]
 const KEY_B1: u32 = 0x1c4;
-#[cfg(not(windows))]
-const KEY_B1: u32 = u32::MAX - 0xB1;
 #[cfg(windows)]
 const KEY_B2: u32 = 0x1c5;
 #[cfg(windows)]
 const KEY_B3: u32 = 0x1c6;
-#[cfg(not(windows))]
-const KEY_B3: u32 = u32::MAX - 0xB3;
 #[cfg(windows)]
 const KEY_C1: u32 = 0x1c7;
 #[cfg(windows)]
 const KEY_C2: u32 = 0x1c8;
-#[cfg(not(windows))]
-const KEY_C2: u32 = u32::MAX - 0xC2;
 #[cfg(windows)]
 const KEY_C3: u32 = 0x1c9;
 
@@ -269,15 +261,23 @@ impl Curses {
       ascii if (ascii <= u8::MAX as u32) => Some(CursesKey::Ascii(ascii as u8)),
       KEY_ENTER | PADENTER => Some(CursesKey::Enter),
       KEY_BACKSPACE => Some(CursesKey::Backspace),
+      KEY_UP => Some(CursesKey::ArrowUp),
+      KEY_LEFT => Some(CursesKey::ArrowLeft),
+      KEY_RIGHT => Some(CursesKey::ArrowRight),
+      KEY_DOWN => Some(CursesKey::ArrowDown),
       KEY_A1 | KEY_HOME => Some(CursesKey::Home),
-      KEY_A2 | KEY_UP => Some(CursesKey::ArrowUp),
       KEY_A3 | KEY_PPAGE => Some(CursesKey::PageUp),
-      KEY_B1 | KEY_LEFT => Some(CursesKey::ArrowLeft),
       KEY_B2 => Some(CursesKey::Keypad5NoNumlock),
-      KEY_B3 | KEY_RIGHT => Some(CursesKey::ArrowRight),
       KEY_C1 | KEY_END => Some(CursesKey::End),
-      KEY_C2 | KEY_DOWN => Some(CursesKey::ArrowDown),
       KEY_C3 | KEY_NPAGE => Some(CursesKey::PageDown),
+      #[cfg(windows)]
+      KEY_A2 => Some(CursesKey::ArrowUp),
+      #[cfg(windows)]
+      KEY_B1 => Some(CursesKey::ArrowLeft),
+      #[cfg(windows)]
+      KEY_B3 => Some(CursesKey::ArrowRight),
+      #[cfg(windows)]
+      KEY_C2 => Some(CursesKey::ArrowDown),
       KEY_IC => Some(CursesKey::Insert),
       KEY_DC => Some(CursesKey::Delete),
       KEY_RESIZE => Some(CursesKey::TerminalResized),

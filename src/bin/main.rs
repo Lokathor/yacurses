@@ -8,8 +8,12 @@ fn main() {
   win.move_cursor(Position { x: 75, y: 1 });
   let ascii = b'@';
   let opt_color_pair = None;
-    win.print_ch(CursesGlyph { ascii, opt_color_pair, attributes: Attributes(0) });
-  for n in 0 .. 16 {
+  win.print_ch(CursesGlyph {
+    ascii,
+    opt_color_pair,
+    attributes: Attributes(0),
+  });
+  for n in 0..16 {
     let attributes = Attributes::BOLD;
     win.print_ch(CursesGlyph { ascii, opt_color_pair, attributes });
   }
@@ -29,7 +33,7 @@ fn main() {
       Some(Q) => break,
       Some(P) => {
         let sh = win.shell_mode().unwrap();
-        for cid in 0 .. 8 {
+        for cid in 0..8 {
           let [r, g, b] = sh.get_color_id_rgb(ColorID(cid)).unwrap();
           eprintln!("CID({}): [{},{},{}]", cid, r, g, b);
         }
