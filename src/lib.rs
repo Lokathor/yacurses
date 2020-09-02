@@ -838,18 +838,14 @@ impl<'a> Deref for CursesShell<'a> {
   }
 }
 
-/// This is how you check the ACS map in general. Specific usages are below.
-unsafe fn ncurses_acs(c: char) -> u8 {
-  (*acs_map.as_ptr().add(c as u8 as usize)) as u8
-}
-
 macro_rules! acs_getter {
   ($fn_name:ident, $ch:expr, $d:expr) => {
     #[doc = $d]
     #[cfg(unix)]
     pub fn $fn_name(&self) -> CursesGlyph {
+      let c: char = $ch;
       CursesGlyph {
-        ascii: unsafe { ncurses_acs($ch) },
+        ascii: unsafe { (*acs_map.as_ptr().add(c as u8 as usize)) as u8 },
         opt_color_pair: None,
         attributes: Attributes::ALT_CHAR_SET,
       }
@@ -858,8 +854,9 @@ macro_rules! acs_getter {
     #[doc = $d]
     #[cfg(windows)]
     pub fn $fn_name(&self) -> CursesGlyph {
+      let c: char = $ch;
       CursesGlyph {
-        ascii: $ch as u8,
+        ascii: c as u8,
         opt_color_pair: None,
         attributes: Attributes::ALT_CHAR_SET,
       }
