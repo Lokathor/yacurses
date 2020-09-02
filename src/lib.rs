@@ -275,8 +275,18 @@ impl Curses {
       KEY_C2 => Some(CursesKey::ArrowDown),
       #[cfg(windows)]
       KEY_C3 => Some(CursesKey::PageDown),
+      #[cfg(windows)]
+      PADENTER => Some(CursesKey::Enter),
+      #[cfg(windows)]
+      PADSLASH => Some(CursesKey::Ascii(b'/')),
+      #[cfg(windows)]
+      PADSTAR => Some(CursesKey::Ascii(b'*')),
+      #[cfg(windows)]
+      PADMINUS => Some(CursesKey::Ascii(b'-')),
+      #[cfg(windows)]
+      PADPLUS => Some(CursesKey::Ascii(b'+')),
       //
-      KEY_ENTER | PADENTER => Some(CursesKey::Enter),
+      KEY_ENTER => Some(CursesKey::Enter),
       KEY_BACKSPACE => Some(CursesKey::Backspace),
       KEY_UP => Some(CursesKey::ArrowUp),
       KEY_LEFT => Some(CursesKey::ArrowLeft),
@@ -290,10 +300,6 @@ impl Curses {
       KEY_IC => Some(CursesKey::Insert),
       KEY_DC => Some(CursesKey::Delete),
       KEY_RESIZE => Some(CursesKey::TerminalResized),
-      PADSLASH => Some(CursesKey::Ascii(b'/')),
-      PADSTAR => Some(CursesKey::Ascii(b'*')),
-      PADMINUS => Some(CursesKey::Ascii(b'-')),
-      PADPLUS => Some(CursesKey::Ascii(b'+')),
       f if (f >= KEY_F0 && f <= KEY_F64) => {
         Some(CursesKey::Function((f - KEY_F0) as u8))
       }
