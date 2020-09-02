@@ -14,10 +14,15 @@ use core::{
 mod bind;
 use bind::*;
 
+#[cfg(windows)]
 const PADSLASH: u32 = 0x1ca;
+#[cfg(windows)]
 const PADENTER: u32 = 0x1cb;
+#[cfg(windows)]
 const PADSTAR: u32 = 0x1cf;
+#[cfg(windows)]
 const PADMINUS: u32 = 0x1d0;
+#[cfg(windows)]
 const PADPLUS: u32 = 0x1d1;
 // Note(Lokathor): shadows the entries from bind.rs
 #[cfg(windows)]

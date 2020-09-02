@@ -19,7 +19,16 @@ fn main() {
   }
   win.move_cursor(Position { x: 75, y: 5 });
   win.print_str("Hello there, General Kenobi!");
-  win.poll_events().unwrap();
+  match win.poll_events() {
+    Some(k) => {
+      let sh = win.shell_mode().unwrap();
+      println!("first key: {:?}", k);
+    }
+    None => {
+      let sh = win.shell_mode().unwrap();
+      println!("couldn't get first key somehow");
+    }
+  };
   win.set_background('!');
   win.clear();
   win.print_ch('a');
