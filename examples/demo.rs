@@ -42,6 +42,8 @@ fn main() {
     win.set_background('!');
     win.clear();
     win.print_str("ACS:");
+    // These are the ACS characters that are most likely to be consistent-enough
+    // across terminals:
     for ch in [
       win.acs_sterling(),
       win.acs_degree(),
