@@ -291,20 +291,22 @@ impl Curses {
       #[cfg(windows)]
       PADPLUS => Some(CursesKey::Ascii(b'+')),
       //
-      KEY_ENTER => Some(CursesKey::Enter),
       KEY_BACKSPACE => Some(CursesKey::Backspace),
       KEY_UP => Some(CursesKey::ArrowUp),
+      KEY_DOWN => Some(CursesKey::ArrowDown),
       KEY_LEFT => Some(CursesKey::ArrowLeft),
       KEY_RIGHT => Some(CursesKey::ArrowRight),
-      KEY_DOWN => Some(CursesKey::ArrowDown),
-      KEY_HOME => Some(CursesKey::Home),
-      KEY_PPAGE => Some(CursesKey::PageUp),
-      KEY_B2 => Some(CursesKey::Keypad5NoNumlock),
-      KEY_END => Some(CursesKey::End),
-      KEY_NPAGE => Some(CursesKey::PageDown),
       KEY_IC => Some(CursesKey::Insert),
       KEY_DC => Some(CursesKey::Delete),
+      KEY_HOME => Some(CursesKey::Home),
+      KEY_END => Some(CursesKey::End),
+      KEY_PPAGE => Some(CursesKey::PageUp),
+      KEY_NPAGE => Some(CursesKey::PageDown),
+      KEY_B2 => Some(CursesKey::Keypad5NoNumlock),
       KEY_RESIZE => Some(CursesKey::TerminalResized),
+      //
+      KEY_ENTER => Some(CursesKey::Enter),
+      //
       f if (f >= KEY_F0 && f <= KEY_F64) => {
         Some(CursesKey::Function((f - KEY_F0) as u8))
       }
