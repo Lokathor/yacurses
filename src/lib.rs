@@ -259,25 +259,34 @@ impl Curses {
     match (unsafe { wgetch(self.ptr) }) as u32 {
       ERR_U32 => None,
       ascii if (ascii <= u8::MAX as u32) => Some(CursesKey::Ascii(ascii as u8)),
+      #[cfg(windows)]
+      KEY_A1 => Some(CursesKey::Home),
+      #[cfg(windows)]
+      KEY_A2 => Some(CursesKey::ArrowUp),
+      #[cfg(windows)]
+      KEY_A3 => Some(CursesKey::PageUp),
+      #[cfg(windows)]
+      KEY_B1 => Some(CursesKey::ArrowLeft),
+      #[cfg(windows)]
+      KEY_B3 => Some(CursesKey::ArrowRight),
+      #[cfg(windows)]
+      KEY_C1 => Some(CursesKey::End),
+      #[cfg(windows)]
+      KEY_C2 => Some(CursesKey::ArrowDown),
+      #[cfg(windows)]
+      KEY_C3 => Some(CursesKey::PageDown),
+      //
       KEY_ENTER | PADENTER => Some(CursesKey::Enter),
       KEY_BACKSPACE => Some(CursesKey::Backspace),
       KEY_UP => Some(CursesKey::ArrowUp),
       KEY_LEFT => Some(CursesKey::ArrowLeft),
       KEY_RIGHT => Some(CursesKey::ArrowRight),
       KEY_DOWN => Some(CursesKey::ArrowDown),
-      KEY_A1 | KEY_HOME => Some(CursesKey::Home),
-      KEY_A3 | KEY_PPAGE => Some(CursesKey::PageUp),
+      KEY_HOME => Some(CursesKey::Home),
+      KEY_PPAGE => Some(CursesKey::PageUp),
       KEY_B2 => Some(CursesKey::Keypad5NoNumlock),
-      KEY_C1 | KEY_END => Some(CursesKey::End),
-      KEY_C3 | KEY_NPAGE => Some(CursesKey::PageDown),
-      #[cfg(windows)]
-      KEY_A2 => Some(CursesKey::ArrowUp),
-      #[cfg(windows)]
-      KEY_B1 => Some(CursesKey::ArrowLeft),
-      #[cfg(windows)]
-      KEY_B3 => Some(CursesKey::ArrowRight),
-      #[cfg(windows)]
-      KEY_C2 => Some(CursesKey::ArrowDown),
+      KEY_END => Some(CursesKey::End),
+      KEY_NPAGE => Some(CursesKey::PageDown),
       KEY_IC => Some(CursesKey::Insert),
       KEY_DC => Some(CursesKey::Delete),
       KEY_RESIZE => Some(CursesKey::TerminalResized),
