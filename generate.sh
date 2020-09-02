@@ -8,7 +8,7 @@ bindgen --disable-name-namespacing --impl-debug --no-doc-comments \
  --raw-line 'extern "C" {}' \
  --rust-target "1.33" \
  --whitelist-var '(COLOR.*|ERR|stdscr|acs_map)' \
- --whitelist-var 'KEY_(BACKSPACE|UP|DOWN|LEFT|RIGHT|UP|DOWN|IC|DC|HOME|END|PPAGE|NPAGE|B2|RESIZE|F0|ENTER)' \
+ --whitelist-var 'KEY_(BACKSPACE|UP|DOWN|LEFT|RIGHT|UP|DOWN|IC|DC|HOME|END|PPAGE|NPAGE|RESIZE|F0|ENTER|A1|A2|A3|B1|B2|B3|C1|C2|C3)' \
  --whitelist-function '(initscr|endwin|isendwin|def_prog_mode|color_content|pair_content)' \
  --whitelist-function '(start_color|has_colors|can_change_color|init_color|init_pair)' \
  --whitelist-function '(keypad|echo|noecho|cbreak|curs_set|wbkgd|getbkgd)' \
