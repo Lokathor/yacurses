@@ -41,7 +41,33 @@ fn main() {
     //
     win.set_background('!');
     win.clear();
-    win.print_ch('a');
+    win.print_str("ACS:");
+    for ch in [
+      win.acs_sterling(),
+      win.acs_degree(),
+      win.acs_plminus(),
+      win.acs_bullet(),
+      win.acs_pi(),
+      win.acs_lequal(),
+      win.acs_gequal(),
+      win.acs_hline(),
+      win.acs_vline(),
+      win.acs_ulcorner(),
+      win.acs_urcorner(),
+      win.acs_llcorner(),
+      win.acs_lrcorner(),
+      win.acs_ltee(),
+      win.acs_rtee(),
+      win.acs_ttee(),
+      win.acs_btee(),
+      win.acs_plus(),
+      win.acs_ckboard(),
+    ]
+    .iter()
+    .copied()
+    {
+      win.print_ch(ch);
+    }
     win.move_cursor(Position { x: 75, y: 8 });
     win.copy_glyphs(&[CursesGlyph::from(ascii); 10]);
     const Q: CursesKey = CursesKey::from_ascii(b'q');
@@ -69,33 +95,6 @@ fn main() {
         }
         _ => continue,
       }
-    }
-    win.move_cursor(Position { x: 0, y: 0 });
-    for ch in [
-      win.acs_sterling(),
-      win.acs_degree(),
-      win.acs_plminus(),
-      win.acs_bullet(),
-      win.acs_pi(),
-      win.acs_lequal(),
-      win.acs_gequal(),
-      win.acs_hline(),
-      win.acs_vline(),
-      win.acs_ulcorner(),
-      win.acs_urcorner(),
-      win.acs_llcorner(),
-      win.acs_lrcorner(),
-      win.acs_ltee(),
-      win.acs_rtee(),
-      win.acs_ttee(),
-      win.acs_btee(),
-      win.acs_plus(),
-      win.acs_ckboard(),
-    ]
-    .iter()
-    .copied()
-    {
-      win.print_ch(ch);
     }
     win.poll_events().unwrap();
   }));
