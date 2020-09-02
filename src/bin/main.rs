@@ -4,6 +4,7 @@ use yacurses::*;
 fn main() {
   let mut win = Curses::init();
   win.set_echo(false);
+  win.set_cursor_visibility(CursorVisibility::Invisible);
   if win.can_change_colors() {
     win.set_color_id_rgb(ColorID::WHITE, [1.0, 1.0, 1.0]).unwrap();
   } else {
