@@ -115,16 +115,17 @@ impl Drop for Curses {
   fn drop(&mut self) {
     // Save the settings before we shut down curses, in case it's resumed later.
     // in case of error, we just accept it.
-    let _ = unsafe { def_prog_mode() };
-    // If not in a panic, shut down curses then restore the old hook. If we
-    // *are* in a panic, our panic hook already shut down curses for us, and we
-    // can't change the panic hook while panicing, so we end up doing nothing.
+    unsafe_always_ok!(def_prog_mode());
+    // this should only error if curses wasn't initialized. Even if we panic,
+    // the panic hook will restore curses mode after it prints the message, so
+    // any time we drop the curses handle this should be true.
+    assert_ne!(unsafe { endwin() }, ERR);
+    CURSES_ACTIVE.store(false, Ordering::SeqCst);
+    // If not in a panic, restore the old panic hook. Changing the hook isn't
+    // allowed during a panic.
     if !std::thread::panicking() {
-      // this should only error if curses wasn't initialized.
-      assert_ne!(unsafe { endwin() }, ERR);
       std::panic::set_hook(replace(&mut self.old_hook, Box::new(|_| {})));
     }
-    CURSES_ACTIVE.store(false, Ordering::SeqCst);
   }
 }
 impl Curses {
@@ -146,12 +147,14 @@ impl Curses {
   pub fn init() -> Self {
     if !CURSES_ACTIVE.compare_and_swap(false, true, Ordering::SeqCst) {
       // If we're about to go into curses mode, grab the current hook to
-      // save for later and install a hook that will turn off curses
-      // before trying to print out the info.
+      // save for later and install a hook that will turn off curses, print the
+      // panic info, and then restore curses.
       let old_hook = std::panic::take_hook();
       std::panic::set_hook(Box::new(|panic_info| {
-        let _ = unsafe_call_result!("panic_endwin", endwin());
-        println!("{}", panic_info);
+        unsafe_always_ok!(def_prog_mode());
+        let _ = unsafe_call_result!("", endwin());
+        eprintln!("{}", panic_info);
+        let _ = unsafe_call_result!("", wrefresh(unsafe { stdscr }));
       }));
       if unsafe { isendwin() } {
         let mut w = Self { ptr: unsafe { stdscr }, old_hook };
@@ -164,17 +167,16 @@ impl Curses {
         // we'll just get other errors if people do use color later on. If we
         // failed to allocate the color table but color isn't used, then there's
         // no reason to raise a fuss.
-        let _ = unsafe_call_result!("init", start_color());
+        let _ = unsafe_call_result!("", start_color());
         // this only fails if curses isn't init or the ptr is null, so it should
         // never fail here since we checked for null already. However, if it
         // somehow does fail anyway, then the worst that happens is that the
         // user can't use the keypad keys.
-        let _ = unsafe_call_result!("init", keypad(win.ptr, true));
+        let _ = unsafe_call_result!("", keypad(win.ptr, true));
         // We always want to operate in cbreak mode, so set it here and don't
         // expose this option to the user. In this case, if `cbreak` isn't set
         // then things will be weird as hell, so we panic on failure.
-        unsafe_call_result!("init", cbreak())
-          .expect("Couldn't set `cbreak` mode.");
+        unsafe_call_result!("", cbreak()).expect("Couldn't set `cbreak` mode.");
         win
       }
     } else {
@@ -276,6 +278,9 @@ impl Curses {
   }
 
   /// Clears the entire screen and moves the cursor to `(0,0)`.
+  ///
+  /// This can have somehwat poor performance. If you're just going to overwrite
+  /// the entire screen with new content anyway, you shouldn't use this.
   pub fn clear(&mut self) -> Result<(), &'static str> {
     unsafe_call_result!("clear", wclear(self.ptr))
   }
@@ -298,6 +303,8 @@ impl Curses {
   /// * Zero: No timeout, `poll_events` returns `None` immediately if no input
   ///   is ready.
   /// * Positive: wait up to this many milliseconds before returning `None`.
+  ///
+  /// The default is to have blocking input.
   pub fn set_timeout(&mut self, time: i32) {
     unsafe_void!(wtimeout(self.ptr, time))
   }
@@ -305,9 +312,8 @@ impl Curses {
   /// Gets an input event.
   ///
   /// * Ascii keys are returned as their ascii value.
-  /// * Keypad keys are values >= 256.
-  /// * If the terminal is resized, that shows up as a special key in this
-  ///   queue.
+  /// * Special keys each have an enum variant of their own.
+  /// * If the terminal is resized, that shows up as a type of "key".
   /// * If you have a timeout set and the time expires, you get `None` back.
   pub fn poll_events(&mut self) -> Option<CursesKey> {
     const ERR_U32: u32 = ERR as u32;
