@@ -16,20 +16,17 @@
 //!
 //! [2]: https://pdcurses.org/
 //!
-//! ## Panic Messages
+//! ## Panic Hook
 //!
-//! The `yacurses` crate itself shouldn't ever panic, but if some other part of
-//! code panics while curses mode is active then the panic message will get
-//! eaten by curses mode when rust tries to print it to stderr (rust prints the
-//! panic info and *then* unwinds the stack, so curses mode is active when the
-//! printing happens). If your program terminates unexpectedly with no message,
-//! there's a reasonable chance that there was a panic but the message was eaten
-//! by curses mode.
+//! The default panic hook will print the panic message and *then* unwind. If
+//! this happens while curses mode is active, curses mode will just eat the
+//! message and you won't see what went wrong. To resolve this, `yacurses`
+//! installs a custom panic hook when you turn it on, and restores the previous
+//! panic hook when it closes down. This all happens automatically.
 //!
-//! If you want to see panic messages, you'll need to run your program within a
-//! [`catch_unwind`](std::panic::catch_unwind) call and then print any panic
-//! message once curses mode has ended. There is a demo of how to do this (and
-//! other basic crate usage) in the `examples/` directory.
+//! A side effect of this is that if you also wanted to have your own panic hook
+//! going on, then there can end up being conflicts. Sorry about that, not much
+//! can be done there.
 
 use core::{
   convert::{TryFrom, TryInto},
@@ -175,7 +172,8 @@ impl Curses {
         // We always want to operate in cbreak mode, so set it here and don't
         // expose this option to the user. In this case, if `cbreak` isn't set
         // then things will be weird as hell, so we panic on failure.
-        unsafe_call_result!("init", cbreak()).expect("Couldn't set `cbreak` mode.");
+        unsafe_call_result!("init", cbreak())
+          .expect("Couldn't set `cbreak` mode.");
         win
       }
     } else {
@@ -224,7 +222,9 @@ impl Curses {
   ///
   /// * Wraps to the next line if in the final col.
   /// * Will scroll the terminal if in the final row, if scrolling is enabled.
-  pub fn print_ch<C: Into<CursesGlyph>>(&mut self, c: C) -> Result<(), &'static str> {
+  pub fn print_ch<C: Into<CursesGlyph>>(
+    &mut self, c: C,
+  ) -> Result<(), &'static str> {
     unsafe_call_result!("print_ch", waddch(self.ptr, c.into().as_chtype()))
   }
 
@@ -237,11 +237,10 @@ impl Curses {
   /// * Wraps to the next line if in the final col.
   /// * Will scroll the terminal if in the final row, if scrolling is enabled.
   pub fn print_str(&mut self, s: &str) -> Result<(), &'static str> {
-    unsafe_call_result!("print_str", waddnstr(
-      self.ptr,
-      s.as_ptr().cast(),
-      s.len().try_into().unwrap()
-    ))
+    unsafe_call_result!(
+      "print_str",
+      waddnstr(self.ptr, s.as_ptr().cast(), s.len().try_into().unwrap())
+    )
   }
 
   /// Inserts the given character under the cursor.
@@ -249,7 +248,9 @@ impl Curses {
   /// * The cursor doesn't move.
   /// * Other characters to the right get pushed 1 cell forward.
   /// * The last character of the line gets pushed off the screen.
-  pub fn insert_ch<C: Into<CursesGlyph>>(&mut self, c: C) -> Result<(), &'static str> {
+  pub fn insert_ch<C: Into<CursesGlyph>>(
+    &mut self, c: C,
+  ) -> Result<(), &'static str> {
     unsafe_call_result!("insert_ch", winsch(self.ptr, c.into().as_chtype()))
   }
 
@@ -267,11 +268,10 @@ impl Curses {
   /// * Does not advance the cursor.
   /// * Does not wrap the content to the next line.
   pub fn copy_glyphs(&mut self, s: &[CursesGlyph]) -> Result<(), &'static str> {
-    unsafe_call_result!("copy_glyphs", waddchnstr(
-      self.ptr,
-      s.as_ptr().cast(),
-      s.len().try_into().unwrap()
-    ))
+    unsafe_call_result!(
+      "copy_glyphs",
+      waddchnstr(self.ptr, s.as_ptr().cast(), s.len().try_into().unwrap())
+    )
   }
 
   /// Clears the entire screen and moves the cursor to `(0,0)`.
@@ -365,7 +365,9 @@ impl Curses {
 
   /// Pushes this event to the front of the event queue so that the next
   /// `poll_events` returns this value.
-  pub fn un_get_event(&mut self, event: Option<CursesKey>) -> Result<(), &'static str> {
+  pub fn un_get_event(
+    &mut self, event: Option<CursesKey>,
+  ) -> Result<(), &'static str> {
     let ev: u32 = match event {
       None => ERR as u32,
       Some(CursesKey::Ascii(ascii)) => ascii as u32,
@@ -397,7 +399,8 @@ impl Curses {
   /// Return the terminal to shell mode temporarily.
   pub fn shell_mode<'a>(&'a mut self) -> Result<CursesShell<'a>, &'static str> {
     unsafe_always_ok!(def_prog_mode());
-    unsafe_call_result!("shell_mode", endwin()).map(move |_| CursesShell { win: self })
+    unsafe_call_result!("shell_mode", endwin())
+      .map(move |_| CursesShell { win: self })
   }
 
   /// If the terminal supports colors at all.
@@ -436,7 +439,10 @@ impl Curses {
     let r_i16 = (r.max(0.0).min(1.0) * 1000.0) as i16;
     let g_i16 = (g.max(0.0).min(1.0) * 1000.0) as i16;
     let b_i16 = (b.max(0.0).min(1.0) * 1000.0) as i16;
-    unsafe_call_result!("set_color_id_rgb", init_color(c.0.into(), r_i16, g_i16, b_i16))
+    unsafe_call_result!(
+      "set_color_id_rgb",
+      init_color(c.0.into(), r_i16, g_i16, b_i16)
+    )
   }
 
   /// Gets the RGB values of the given color id.
@@ -444,12 +450,10 @@ impl Curses {
     let mut r_i16 = 0;
     let mut g_i16 = 0;
     let mut b_i16 = 0;
-    unsafe_call_result!("get_color_id_rgb", color_content(
-      c.0.into(),
-      &mut r_i16,
-      &mut g_i16,
-      &mut b_i16
-    ))
+    unsafe_call_result!(
+      "get_color_id_rgb",
+      color_content(c.0.into(), &mut r_i16, &mut g_i16, &mut b_i16)
+    )
     .map(|_| {
       let r = r_i16 as f32 / 1000.0;
       let g = g_i16 as f32 / 1000.0;
@@ -467,11 +471,10 @@ impl Curses {
   pub fn set_color_pair_content(
     &mut self, pair: ColorPair, fg: ColorID, bg: ColorID,
   ) -> Result<(), &'static str> {
-    unsafe_call_result!("set_color_pair_content", init_pair(
-      pair.0.get().into(),
-      fg.0.into(),
-      bg.0.into()
-    ))
+    unsafe_call_result!(
+      "set_color_pair_content",
+      init_pair(pair.0.get().into(), fg.0.into(), bg.0.into())
+    )
   }
 
   /// Gets the RGB values of the given color id.
@@ -480,11 +483,14 @@ impl Curses {
   ) -> Result<(ColorID, ColorID), &'static str> {
     let mut f_i16 = 0;
     let mut b_i16 = 0;
-    unsafe_call_result!("get_color_pair_content", pair_content(c.0.into(), &mut f_i16, &mut b_i16))
-      .and_then(|_| match (u8::try_from(f_i16), u8::try_from(b_i16)) {
-        (Ok(f), Ok(b)) => Ok((ColorID(f), ColorID(b))),
-        _ => Err("get_color_pair_content"),
-      })
+    unsafe_call_result!(
+      "get_color_pair_content",
+      pair_content(c.0.into(), &mut f_i16, &mut b_i16)
+    )
+    .and_then(|_| match (u8::try_from(f_i16), u8::try_from(b_i16)) {
+      (Ok(f), Ok(b)) => Ok((ColorID(f), ColorID(b))),
+      _ => Err("get_color_pair_content"),
+    })
   }
 
   /// Sets the default coloring for all newly printed glyphs.
@@ -492,7 +498,10 @@ impl Curses {
     &mut self, opt_pair: Option<ColorPair>,
   ) -> Result<(), &'static str> {
     let p = opt_pair.map(|cp| cp.0.get()).unwrap_or(0).into();
-    unsafe_call_result!("set_active_color_pair", wcolor_set(self.ptr, p, core::ptr::null_mut()))
+    unsafe_call_result!(
+      "set_active_color_pair",
+      wcolor_set(self.ptr, p, core::ptr::null_mut())
+    )
   }
 
   /// Set if the window can be scrolled or not.
@@ -509,8 +518,13 @@ impl Curses {
   /// scrolled. All other lines will move 1 row upward.
   ///
   /// * By default the scroll region is the entire terminal.
-  pub fn set_scroll_region(&mut self, top: u32, bottom: u32) -> Result<(), &'static str> {
-    unsafe_call_result!("set_scroll_region", wsetscrreg(self.ptr, top as i32, bottom as i32))
+  pub fn set_scroll_region(
+    &mut self, top: u32, bottom: u32,
+  ) -> Result<(), &'static str> {
+    unsafe_call_result!(
+      "set_scroll_region",
+      wsetscrreg(self.ptr, top as i32, bottom as i32)
+    )
   }
 
   /// Scrolls the window by the given number of lines.
