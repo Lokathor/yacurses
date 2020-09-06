@@ -116,11 +116,12 @@ impl Drop for Curses {
     // Save the settings before we shut down curses, in case it's resumed later.
     // in case of error, we just accept it.
     let _ = unsafe { def_prog_mode() };
-    // this should only error if curses wasn't initialized.
-    assert_ne!(unsafe { endwin() }, ERR);
-    // restore the hook from before curses was initialized.
-    // If we're in a panic we skip this step.
+    // If not in a panic, shut down curses then restore the old hook. If we
+    // *are* in a panic, our panic hook already shut down curses for us, and we
+    // can't change the panic hook while panicing, so we end up doing nothing.
     if !std::thread::panicking() {
+      // this should only error if curses wasn't initialized.
+      assert_ne!(unsafe { endwin() }, ERR);
       std::panic::set_hook(replace(&mut self.old_hook, Box::new(|_| {})));
     }
     CURSES_ACTIVE.store(false, Ordering::SeqCst);
@@ -150,7 +151,7 @@ impl Curses {
       let old_hook = std::panic::take_hook();
       std::panic::set_hook(Box::new(|panic_info| {
         let _ = unsafe_call_result!("panic_endwin", endwin());
-        eprintln!("{}", panic_info);
+        println!("{}", panic_info);
       }));
       if unsafe { isendwin() } {
         let mut w = Self { ptr: unsafe { stdscr }, old_hook };
