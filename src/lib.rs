@@ -149,8 +149,8 @@ impl Curses {
       // before trying to print out the info.
       let old_hook = std::panic::take_hook();
       std::panic::set_hook(Box::new(|panic_info| {
-        let _ = unsafe_call_result!("init", endwin());
-        println!("{}", panic_info);
+        let _ = unsafe_call_result!("panic_endwin", endwin());
+        eprintln!("{}", panic_info);
       }));
       if unsafe { isendwin() } {
         let mut w = Self { ptr: unsafe { stdscr }, old_hook };
