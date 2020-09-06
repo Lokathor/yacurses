@@ -116,10 +116,8 @@ impl Drop for Curses {
     // Save the settings before we shut down curses, in case it's resumed later.
     // in case of error, we just accept it.
     unsafe_always_ok!(def_prog_mode());
-    // this should only error if curses wasn't initialized. Even if we panic,
-    // the panic hook will restore curses mode after it prints the message, so
-    // any time we drop the curses handle this should be true.
-    assert_ne!(unsafe { endwin() }, ERR);
+    // In case of panic, curses mode will already be off.
+    let _ = unsafe { endwin() };
     CURSES_ACTIVE.store(false, Ordering::SeqCst);
     // If not in a panic, restore the old panic hook. Changing the hook isn't
     // allowed during a panic.
@@ -154,7 +152,6 @@ impl Curses {
         unsafe_always_ok!(def_prog_mode());
         let _ = unsafe_call_result!("", endwin());
         eprintln!("{}", panic_info);
-        let _ = unsafe_call_result!("", wrefresh(stdscr));
       }));
       if unsafe { isendwin() } {
         let mut w = Self { ptr: unsafe { stdscr }, old_hook };
