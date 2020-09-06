@@ -154,7 +154,7 @@ impl Curses {
         unsafe_always_ok!(def_prog_mode());
         let _ = unsafe_call_result!("", endwin());
         eprintln!("{}", panic_info);
-        let _ = unsafe_call_result!("", wrefresh(unsafe { stdscr }));
+        let _ = unsafe_call_result!("", wrefresh(stdscr));
       }));
       if unsafe { isendwin() } {
         let mut w = Self { ptr: unsafe { stdscr }, old_hook };
