@@ -402,6 +402,8 @@ impl Curses {
 
   /// Return the terminal to shell mode temporarily.
   pub fn shell_mode<'a>(&'a mut self) -> Result<CursesShell<'a>, &'static str> {
+    // ensure curses mode, in case a panic left us in shell mode
+    let _ = self.refresh();
     unsafe_always_ok!(def_prog_mode());
     unsafe_call_result!("shell_mode", endwin())
       .map(move |_| CursesShell { win: self })
