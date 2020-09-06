@@ -1,4 +1,3 @@
-#![no_std]
 #![warn(missing_docs)]
 
 //! Yet another curses library.
@@ -34,8 +33,10 @@
 
 use core::{
   convert::{TryFrom, TryInto},
+  mem::replace,
   num::NonZeroU8,
   ops::*,
+  panic::PanicInfo,
   sync::atomic::{AtomicBool, Ordering},
 };
 
@@ -78,9 +79,9 @@ const KEY_B2: u32 = 0x1c5;
 
 /// We're doing an unsafe call, then turning the `c_int` into a `Result`.
 macro_rules! unsafe_call_result {
-  ($func:ident($($tree:tt)*)) => {
+  ($name:literal, $func:ident($($tree:tt)*)) => {
     if ERR == unsafe { $func($($tree)*) } {
-      Err(())
+      Err($name)
     } else {
       Ok(())
     }
@@ -104,10 +105,13 @@ macro_rules! unsafe_void {
   }}
 }
 
+type PanicHook = Box<dyn Fn(&PanicInfo) + Sync + Send + 'static>;
+
 /// Handle to the terminal's curses interface.
-#[repr(transparent)]
+#[repr(C)]
 pub struct Curses {
   ptr: *mut WINDOW,
+  old_hook: PanicHook,
 }
 static CURSES_ACTIVE: AtomicBool = AtomicBool::new(false);
 impl Drop for Curses {
@@ -117,6 +121,11 @@ impl Drop for Curses {
     let _ = unsafe { def_prog_mode() };
     // this should only error if curses wasn't initialized.
     assert_ne!(unsafe { endwin() }, ERR);
+    // restore the hook from before curses was initialized.
+    // If we're in a panic we skip this step.
+    if !std::thread::panicking() {
+      std::panic::set_hook(replace(&mut self.old_hook, Box::new(|_| {})));
+    }
     CURSES_ACTIVE.store(false, Ordering::SeqCst);
   }
 }
@@ -133,29 +142,40 @@ impl Curses {
   /// ## Other
   /// * If this fails on the curses side, curses will "helpfully" print an error
   ///   and abort the process for you.
+  /// * This installs a custom panic hook that ends curses mode before printing
+  ///   the panic message. Otherwise your panic messages get eaten. The normal
+  ///   panic hook is restored when `Curses` drops.
   pub fn init() -> Self {
     if !CURSES_ACTIVE.compare_and_swap(false, true, Ordering::SeqCst) {
+      // If we're about to go into curses mode, grab the current hook to
+      // save for later and install a hook that will turn off curses
+      // before trying to print out the info.
+      let old_hook = std::panic::take_hook();
+      std::panic::set_hook(Box::new(|panic_info| {
+        let _ = unsafe_call_result!("init", endwin());
+        println!("{}", panic_info);
+      }));
       if unsafe { isendwin() } {
-        let mut w = Self { ptr: unsafe { stdscr } };
+        let mut w = Self { ptr: unsafe { stdscr }, old_hook };
         w.refresh().unwrap();
         w
       } else {
-        let win = Self { ptr: unsafe { initscr() } };
+        let win = Self { ptr: unsafe { initscr() }, old_hook };
         assert!(!win.ptr.is_null());
         // technically this could fail to allocate the color table, but if so
         // we'll just get other errors if people do use color later on. If we
         // failed to allocate the color table but color isn't used, then there's
         // no reason to raise a fuss.
-        let _ = unsafe_call_result!(start_color());
+        let _ = unsafe_call_result!("init", start_color());
         // this only fails if curses isn't init or the ptr is null, so it should
         // never fail here since we checked for null already. However, if it
         // somehow does fail anyway, then the worst that happens is that the
         // user can't use the keypad keys.
-        let _ = unsafe_call_result!(keypad(win.ptr, true));
+        let _ = unsafe_call_result!("init", keypad(win.ptr, true));
         // We always want to operate in cbreak mode, so set it here and don't
         // expose this option to the user. In this case, if `cbreak` isn't set
         // then things will be weird as hell, so we panic on failure.
-        unsafe_call_result!(cbreak()).expect("Couldn't set `cbreak` mode.");
+        unsafe_call_result!("init", cbreak()).expect("Couldn't set `cbreak` mode.");
         win
       }
     } else {
@@ -164,18 +184,18 @@ impl Curses {
   }
 
   /// Pushes all updates out to the physical screen, refreshing the display.
-  pub fn refresh(&mut self) -> Result<(), ()> {
-    unsafe_call_result!(wrefresh(self.ptr))
+  pub fn refresh(&mut self) -> Result<(), &'static str> {
+    unsafe_call_result!("refresh", wrefresh(self.ptr))
   }
 
   /// Sets if user inputs should automatically echo to the screen or not.
   ///
   /// * Initially this is enabled.
-  pub fn set_echo(&mut self, echoing: bool) -> Result<(), ()> {
+  pub fn set_echo(&mut self, echoing: bool) -> Result<(), &'static str> {
     if echoing {
-      unsafe_call_result!(echo())
+      unsafe_call_result!("set_echo", echo())
     } else {
-      unsafe_call_result!(noecho())
+      unsafe_call_result!("set_echo", noecho())
     }
   }
 
@@ -196,16 +216,16 @@ impl Curses {
   }
 
   /// Move the cursor to the position given.
-  pub fn move_cursor(&mut self, p: Position) -> Result<(), ()> {
-    unsafe_call_result!(wmove(self.ptr, p.y as _, p.x as _))
+  pub fn move_cursor(&mut self, p: Position) -> Result<(), &'static str> {
+    unsafe_call_result!("move_cursor", wmove(self.ptr, p.y as _, p.x as _))
   }
 
   /// Prints the character given, advancing the cursor.
   ///
   /// * Wraps to the next line if in the final col.
   /// * Will scroll the terminal if in the final row, if scrolling is enabled.
-  pub fn print_ch<C: Into<CursesGlyph>>(&mut self, c: C) -> Result<(), ()> {
-    unsafe_call_result!(waddch(self.ptr, c.into().as_chtype()))
+  pub fn print_ch<C: Into<CursesGlyph>>(&mut self, c: C) -> Result<(), &'static str> {
+    unsafe_call_result!("print_ch", waddch(self.ptr, c.into().as_chtype()))
   }
 
   /// Prints the str given, advancing the cursor.
@@ -216,8 +236,8 @@ impl Curses {
   ///
   /// * Wraps to the next line if in the final col.
   /// * Will scroll the terminal if in the final row, if scrolling is enabled.
-  pub fn print_str(&mut self, s: &str) -> Result<(), ()> {
-    unsafe_call_result!(waddnstr(
+  pub fn print_str(&mut self, s: &str) -> Result<(), &'static str> {
+    unsafe_call_result!("print_str", waddnstr(
       self.ptr,
       s.as_ptr().cast(),
       s.len().try_into().unwrap()
@@ -229,8 +249,8 @@ impl Curses {
   /// * The cursor doesn't move.
   /// * Other characters to the right get pushed 1 cell forward.
   /// * The last character of the line gets pushed off the screen.
-  pub fn insert_ch<C: Into<CursesGlyph>>(&mut self, c: C) -> Result<(), ()> {
-    unsafe_call_result!(winsch(self.ptr, c.into().as_chtype()))
+  pub fn insert_ch<C: Into<CursesGlyph>>(&mut self, c: C) -> Result<(), &'static str> {
+    unsafe_call_result!("insert_ch", winsch(self.ptr, c.into().as_chtype()))
   }
 
   /// Deleted character under the cursor.
@@ -238,16 +258,16 @@ impl Curses {
   /// * The cursor doesn't move.
   /// * Other characters to the right get pulled 1 cell backward.
   /// * The last character of the line is now blank.
-  pub fn delete_ch(&mut self) -> Result<(), ()> {
-    unsafe_call_result!(wdelch(self.ptr))
+  pub fn delete_ch(&mut self) -> Result<(), &'static str> {
+    unsafe_call_result!("delete_ch", wdelch(self.ptr))
   }
 
   /// Copies the slice of glyphs starting from the cursor position.
   ///
   /// * Does not advance the cursor.
   /// * Does not wrap the content to the next line.
-  pub fn copy_glyphs(&mut self, s: &[CursesGlyph]) -> Result<(), ()> {
-    unsafe_call_result!(waddchnstr(
+  pub fn copy_glyphs(&mut self, s: &[CursesGlyph]) -> Result<(), &'static str> {
+    unsafe_call_result!("copy_glyphs", waddchnstr(
       self.ptr,
       s.as_ptr().cast(),
       s.len().try_into().unwrap()
@@ -255,19 +275,19 @@ impl Curses {
   }
 
   /// Clears the entire screen and moves the cursor to `(0,0)`.
-  pub fn clear(&mut self) -> Result<(), ()> {
-    unsafe_call_result!(wclear(self.ptr))
+  pub fn clear(&mut self) -> Result<(), &'static str> {
+    unsafe_call_result!("clear", wclear(self.ptr))
   }
 
   /// Set the given attribute bits to be on or off.
   pub fn set_attributes(
     &mut self, attr: Attributes, on: bool,
-  ) -> Result<(), ()> {
+  ) -> Result<(), &'static str> {
     let attr: i32 = ((attr.0 as u32) << 16) as i32;
     if on {
-      unsafe_call_result!(wattron(self.ptr, attr))
+      unsafe_call_result!("set_attributes", wattron(self.ptr, attr))
     } else {
-      unsafe_call_result!(wattroff(self.ptr, attr))
+      unsafe_call_result!("set_attributes", wattroff(self.ptr, attr))
     }
   }
 
@@ -345,7 +365,7 @@ impl Curses {
 
   /// Pushes this event to the front of the event queue so that the next
   /// `poll_events` returns this value.
-  pub fn un_get_event(&mut self, event: Option<CursesKey>) -> Result<(), ()> {
+  pub fn un_get_event(&mut self, event: Option<CursesKey>) -> Result<(), &'static str> {
     let ev: u32 = match event {
       None => ERR as u32,
       Some(CursesKey::Ascii(ascii)) => ascii as u32,
@@ -366,18 +386,18 @@ impl Curses {
       Some(CursesKey::TerminalResized) => KEY_RESIZE,
       Some(CursesKey::UnknownKey(u)) => u,
     };
-    unsafe_call_result!(ungetch(ev as i32))
+    unsafe_call_result!("un_get_event", ungetch(ev as i32))
   }
 
   /// Flushes all pending key events.
-  pub fn flush_events(&mut self) -> Result<(), ()> {
-    unsafe_call_result!(flushinp())
+  pub fn flush_events(&mut self) -> Result<(), &'static str> {
+    unsafe_call_result!("flush_events", flushinp())
   }
 
   /// Return the terminal to shell mode temporarily.
-  pub fn shell_mode<'a>(&'a mut self) -> Result<CursesShell<'a>, ()> {
+  pub fn shell_mode<'a>(&'a mut self) -> Result<CursesShell<'a>, &'static str> {
     unsafe_always_ok!(def_prog_mode());
-    unsafe_call_result!(endwin()).map(move |_| CursesShell { win: self })
+    unsafe_call_result!("shell_mode", endwin()).map(move |_| CursesShell { win: self })
   }
 
   /// If the terminal supports colors at all.
@@ -412,19 +432,19 @@ impl Curses {
   /// Inputs are clamped to the range `0.0 ..= 1.0`
   pub fn set_color_id_rgb(
     &mut self, c: ColorID, [r, g, b]: [f32; 3],
-  ) -> Result<(), ()> {
+  ) -> Result<(), &'static str> {
     let r_i16 = (r.max(0.0).min(1.0) * 1000.0) as i16;
     let g_i16 = (g.max(0.0).min(1.0) * 1000.0) as i16;
     let b_i16 = (b.max(0.0).min(1.0) * 1000.0) as i16;
-    unsafe_call_result!(init_color(c.0.into(), r_i16, g_i16, b_i16))
+    unsafe_call_result!("set_color_id_rgb", init_color(c.0.into(), r_i16, g_i16, b_i16))
   }
 
   /// Gets the RGB values of the given color id.
-  pub fn get_color_id_rgb(&self, c: ColorID) -> Result<[f32; 3], ()> {
+  pub fn get_color_id_rgb(&self, c: ColorID) -> Result<[f32; 3], &'static str> {
     let mut r_i16 = 0;
     let mut g_i16 = 0;
     let mut b_i16 = 0;
-    unsafe_call_result!(color_content(
+    unsafe_call_result!("get_color_id_rgb", color_content(
       c.0.into(),
       &mut r_i16,
       &mut g_i16,
@@ -446,8 +466,8 @@ impl Curses {
   /// color pair.
   pub fn set_color_pair_content(
     &mut self, pair: ColorPair, fg: ColorID, bg: ColorID,
-  ) -> Result<(), ()> {
-    unsafe_call_result!(init_pair(
+  ) -> Result<(), &'static str> {
+    unsafe_call_result!("set_color_pair_content", init_pair(
       pair.0.get().into(),
       fg.0.into(),
       bg.0.into()
@@ -457,29 +477,29 @@ impl Curses {
   /// Gets the RGB values of the given color id.
   pub fn get_color_pair_content(
     &self, c: ColorID,
-  ) -> Result<(ColorID, ColorID), ()> {
+  ) -> Result<(ColorID, ColorID), &'static str> {
     let mut f_i16 = 0;
     let mut b_i16 = 0;
-    unsafe_call_result!(pair_content(c.0.into(), &mut f_i16, &mut b_i16))
+    unsafe_call_result!("get_color_pair_content", pair_content(c.0.into(), &mut f_i16, &mut b_i16))
       .and_then(|_| match (u8::try_from(f_i16), u8::try_from(b_i16)) {
         (Ok(f), Ok(b)) => Ok((ColorID(f), ColorID(b))),
-        _ => Err(()),
+        _ => Err("get_color_pair_content"),
       })
   }
 
   /// Sets the default coloring for all newly printed glyphs.
   pub fn set_active_color_pair(
     &mut self, opt_pair: Option<ColorPair>,
-  ) -> Result<(), ()> {
+  ) -> Result<(), &'static str> {
     let p = opt_pair.map(|cp| cp.0.get()).unwrap_or(0).into();
-    unsafe_call_result!(wcolor_set(self.ptr, p, core::ptr::null_mut()))
+    unsafe_call_result!("set_active_color_pair", wcolor_set(self.ptr, p, core::ptr::null_mut()))
   }
 
   /// Set if the window can be scrolled or not.
   ///
   /// * Off by default.
-  pub fn set_scrollable(&mut self, yes: bool) -> Result<(), ()> {
-    unsafe_call_result!(scrollok(self.ptr, yes))
+  pub fn set_scrollable(&mut self, yes: bool) -> Result<(), &'static str> {
+    unsafe_call_result!("set_scrollable", scrollok(self.ptr, yes))
   }
 
   /// Sets the top line and bottom line that mark the edges of the scrollable
@@ -489,8 +509,8 @@ impl Curses {
   /// scrolled. All other lines will move 1 row upward.
   ///
   /// * By default the scroll region is the entire terminal.
-  pub fn set_scroll_region(&mut self, top: u32, bottom: u32) -> Result<(), ()> {
-    unsafe_call_result!(wsetscrreg(self.ptr, top as i32, bottom as i32))
+  pub fn set_scroll_region(&mut self, top: u32, bottom: u32) -> Result<(), &'static str> {
+    unsafe_call_result!("set_scroll_region", wsetscrreg(self.ptr, top as i32, bottom as i32))
   }
 
   /// Scrolls the window by the given number of lines.
@@ -498,8 +518,8 @@ impl Curses {
   /// * Negative: text moves down the page.
   /// * Positive: text moves up the page.
   /// * Zero: text doesn't move.
-  pub fn scroll(&mut self, n: i32) -> Result<(), ()> {
-    unsafe_call_result!(wscrl(self.ptr, n))
+  pub fn scroll(&mut self, n: i32) -> Result<(), &'static str> {
+    unsafe_call_result!("scroll", wscrl(self.ptr, n))
   }
 
   /// Sets the cursor visibility.
@@ -507,21 +527,21 @@ impl Curses {
   /// Returns the old visibility, or Err if it can't be set.
   pub fn set_cursor_visibility(
     &mut self, vis: CursorVisibility,
-  ) -> Result<CursorVisibility, ()> {
+  ) -> Result<CursorVisibility, &'static str> {
     let old = unsafe { curs_set(vis as i32) };
     Ok(match old {
       0 => CursorVisibility::Invisible,
       1 => CursorVisibility::Normal,
       2 => CursorVisibility::VeryVisible,
-      _ => return Err(()),
+      _ => return Err("set_cursor_visibility"),
     })
   }
 
   /// Sets the background glyph.
   pub fn set_background<C: Into<CursesGlyph>>(
     &mut self, c: C,
-  ) -> Result<(), ()> {
-    unsafe_call_result!(wbkgd(self.ptr, c.into().as_chtype()))
+  ) -> Result<(), &'static str> {
+    unsafe_call_result!("set_background", wbkgd(self.ptr, c.into().as_chtype()))
   }
 
   /// Gets the background glyph.
@@ -848,7 +868,7 @@ pub struct CursesShell<'a> {
 }
 impl<'a> Drop for CursesShell<'a> {
   fn drop(&mut self) {
-    unsafe_call_result!(wrefresh(self.win.ptr)).unwrap();
+    unsafe_call_result!("refresh", wrefresh(self.win.ptr)).unwrap();
   }
 }
 impl<'a> Deref for CursesShell<'a> {
