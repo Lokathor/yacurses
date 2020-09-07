@@ -647,7 +647,7 @@ pub enum CursorVisibility {
 /// This type has some associated constants.
 /// Each constant names the id value that is most likely to display as that
 /// color by default.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(transparent)]
 pub struct ColorID(pub u8);
 #[allow(missing_docs)]
@@ -678,7 +678,7 @@ impl ColorID {
 /// If you change the colors of a color pair, all character cells on the screen
 /// using that pairing will have their displayed colors immediately changed
 /// accordingly.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(transparent)]
 pub struct ColorPair(pub NonZeroU8);
 
@@ -687,7 +687,7 @@ pub struct ColorPair(pub NonZeroU8);
 /// Useful attributes have named constants.
 /// Other bits are generally ineffective.
 /// None of the bits can cause a safety concern.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(transparent)]
 pub struct Attributes(pub u16);
 impl Attributes {
