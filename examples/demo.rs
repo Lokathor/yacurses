@@ -91,5 +91,5 @@ fn main() {
       _ => continue,
     }
   }
-  win.poll_events().unwrap();
+  println!("Demo over.");
 }
