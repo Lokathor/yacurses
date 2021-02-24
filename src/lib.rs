@@ -16,6 +16,27 @@
 //!
 //! [2]: https://pdcurses.org/
 //!
+//! ## Usage
+//!
+//! This crate is accessed through a `Curses` handle (traditionally called
+//! "win", for "window"). Use the [`init`](Curses::init) method to start curses
+//! mode. Dropping the struct will automatically end curses mode.
+//!
+//! **Caution:** Curses mode is a global effect, and attempting to
+//! double-initialize curses will panic. Also, if curses fails to initialize,
+//! the curses library itself will print a message and abort your process.
+//!
+//! ```no_run
+//! use yacurses::*;
+//!
+//! fn main() {
+//!   let mut win = Curses::init();
+//!   win.move_cursor(Position { x: 3, y: 2 });
+//!   win.print_str("demo message");
+//!   win.poll_events(); // by default, this blocks until an event comes in.
+//! }
+//! ```
+//!
 //! ## Panic Hook
 //!
 //! The default panic hook will print the panic message and *then* unwind. If
