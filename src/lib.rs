@@ -16,6 +16,27 @@
 //!
 //! [2]: https://pdcurses.org/
 //!
+//! ## Usage
+//!
+//! This crate is accessed through a `Curses` handle (traditionally called
+//! "win", for "window"). Use the [`init`](Curses::init) method to start curses
+//! mode. Dropping the struct will automatically end curses mode.
+//!
+//! **Caution:** Curses mode is a global effect, and attempting to
+//! double-initialize curses will panic. Also, if curses fails to initialize,
+//! the curses library itself will print a message and abort your process.
+//!
+//! ```no_run
+//! use yacurses::*;
+//!
+//! fn main() {
+//!   let mut win = Curses::init();
+//!   win.move_cursor(Position { x: 3, y: 2 });
+//!   win.print_str("demo message");
+//!   win.poll_events(); // by default, this blocks until an event comes in.
+//! }
+//! ```
+//!
 //! ## Panic Hook
 //!
 //! The default panic hook will print the panic message and *then* unwind. If
@@ -37,42 +58,18 @@ use core::{
   sync::atomic::{AtomicBool, Ordering},
 };
 
-#[cfg_attr(windows, allow(dead_code))]
-mod ncurses_bind;
-use ncurses_bind::*;
+mod curses_common;
+use curses_common::*;
+
+#[cfg(unix)]
+mod ncurses;
+#[cfg(unix)]
+use ncurses::*;
 
 #[cfg(windows)]
-const PADSLASH: u32 = 0x1ca;
+mod pdcurses;
 #[cfg(windows)]
-const PADENTER: u32 = 0x1cb;
-#[cfg(windows)]
-const PADSTAR: u32 = 0x1cf;
-#[cfg(windows)]
-const PADMINUS: u32 = 0x1d0;
-#[cfg(windows)]
-const PADPLUS: u32 = 0x1d1;
-#[cfg(windows)]
-const KEY_A1: u32 = 0x1c1;
-#[cfg(windows)]
-const KEY_A2: u32 = 0x1c2;
-#[cfg(windows)]
-const KEY_A3: u32 = 0x1c3;
-#[cfg(windows)]
-const KEY_B1: u32 = 0x1c4;
-#[cfg(windows)]
-const KEY_B3: u32 = 0x1c6;
-#[cfg(windows)]
-const KEY_C1: u32 = 0x1c7;
-#[cfg(windows)]
-const KEY_C2: u32 = 0x1c8;
-#[cfg(windows)]
-const KEY_C3: u32 = 0x1c9;
-// Note(Lokathor): shadows the entry from bind.rs
-#[cfg(windows)]
-const KEY_END: u32 = 0x166;
-// Note(Lokathor): shadows the entry from bind.rs
-#[cfg(windows)]
-const KEY_B2: u32 = 0x1c5;
+use pdcurses::*;
 
 /// We're doing an unsafe call, then turning the `c_int` into a `Result`.
 macro_rules! unsafe_call_result {
@@ -279,7 +276,7 @@ impl Curses {
 
   /// Clears the entire screen and moves the cursor to `(0,0)`.
   ///
-  /// This can have somehwat poor performance. If you're just going to overwrite
+  /// This can have somewhat poor performance. If you're just going to overwrite
   /// the entire screen with new content anyway, you shouldn't use this.
   pub fn clear(&mut self) -> Result<(), &'static str> {
     unsafe_call_result!("clear", wclear(self.ptr))
@@ -569,7 +566,7 @@ impl Curses {
 
   /// Gets the background glyph.
   pub fn get_background(&self) -> CursesGlyph {
-    unsafe { core::mem::transmute(getbkgd(self.ptr)) }
+    CursesGlyph::from(unsafe { getbkgd(self.ptr) })
   }
 }
 
@@ -620,6 +617,11 @@ impl From<char> for CursesGlyph {
     Self { ascii, opt_color_pair: None, attributes: Attributes(0) }
   }
 }
+impl From<chtype> for CursesGlyph {
+  fn from(cht: chtype) -> Self {
+    unsafe { core::mem::transmute(cht) }
+  }
+}
 impl CursesGlyph {
   /// Turn into a `chtype` for sending to ncurses.
   fn as_chtype(self) -> chtype {
@@ -634,7 +636,7 @@ pub enum CursorVisibility {
   Invisible = 0,
   /// Cursor is normal.
   Normal = 1,
-  /// Cursor is extra visible (not always supported).
+  /// Cursor is "extra" visible (rarely supported).
   VeryVisible = 2,
 }
 
@@ -694,6 +696,13 @@ pub struct ColorPair(pub NonZeroU8);
 #[repr(transparent)]
 pub struct Attributes(pub u16);
 impl Attributes {
+  // TODO: the attribute bits are all very magical in here, and perhaps we
+  // should document this more? Like why are we down shifting by 16 all the
+  // pdcurses constants instead of just dropping the bottom 4 hex digits. It's
+  // the same effect either way. I think it has to do with ncurses defining the
+  // bits as plain values that go into a macro, and pdcurses uses constants that
+  // happen to already be in position.
+
   /// The text should stand out in some way.
   ///
   /// * Usually the same as `REVERSE`.
@@ -776,6 +785,9 @@ impl Attributes {
     Attributes((0x00080000 >> 16) as u16)
   };
 
+  // All these attributes appear to have no effect at all in the terminals I've
+  // tested. Best to not give the users something that's useless. We can add
+  // them later if someone can show an example of them working.
   /*
   /// This would protect against "selective erase", not used in modern terminals.
   pub const PROTECT: Attributes = Attributes(1 << 8);
@@ -833,6 +845,9 @@ pub enum CursesKey {
   /// An ascii input (most all the keys with symbols on them).
   Ascii(u8),
   /// The terminal was resized.
+  ///
+  /// `yacurses` will fix things on the curses side when this happens, but you
+  /// should update anything on your side of the equation.
   TerminalResized,
   /// Enter key
   Enter,
