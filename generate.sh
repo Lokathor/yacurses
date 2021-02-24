@@ -4,9 +4,6 @@ bindgen --disable-name-namespacing --impl-debug --no-doc-comments \
  --ctypes-prefix chlorine \
  --output src/ncurses_bind.rs \
  --raw-line '#![allow(bad_style)]' \
- --raw-line '#[cfg_attr(unix, link(name = "ncurses"))]' \
- --raw-line '#[cfg_attr(windows, link(name = "pdcurses"))]' \
- --raw-line 'extern "C" {}' \
  --rust-target "1.33" \
  --whitelist-var '(COLOR.*|ERR|stdscr|acs_map)' \
  --whitelist-var 'KEY_(BACKSPACE|UP|DOWN|LEFT|RIGHT|UP|DOWN|IC|DC|HOME|END|PPAGE|NPAGE|RESIZE|F0|ENTER|B2)' \

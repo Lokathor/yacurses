@@ -1,11 +1,13 @@
-#[cfg(not(windows))]
+#[cfg(unix)]
 fn main() {
-  // pass
+  println!("cargo:rustc-link-lib=dylib=ncurses");
 }
 
 #[cfg(windows)]
 fn main() {
   let mut build = cc::Build::new();
+
+  // This puts all the `*.c` files we can find into the build.
 
   for res_dir_entry in std::fs::read_dir("pdcurses_win32").unwrap() {
     if let Ok(dir_entry) = res_dir_entry {
@@ -28,7 +30,13 @@ fn main() {
     .define("PDC_FORCE_UTF8", Some("Y"))
     .define("PDC_RGB", Some("Y"));
 
-  println!("cargo:rustc-link-lib=dylib=user32");
+  build.compile("pdcurses");
 
-  build.compile("libpdcurses.a");
+  println!("cargo:rustc-link-lib=dylib=pdcurses");
+  println!("cargo:rustc-link-lib=dylib=user32");
+}
+
+#[cfg(not(any(unix, windows)))]
+fn main() {
+  panic!("yacurses only knows how to build for unix and windows.");
 }

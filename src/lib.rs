@@ -143,7 +143,10 @@ impl Curses {
   ///   the panic message. Otherwise your panic messages get eaten. The normal
   ///   panic hook is restored when `Curses` drops.
   pub fn init() -> Self {
-    if !CURSES_ACTIVE.compare_and_swap(false, true, Ordering::SeqCst) {
+    if CURSES_ACTIVE
+      .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+      .is_ok()
+    {
       // If we're about to go into curses mode, grab the current hook to
       // save for later and install a hook that will turn off curses, print the
       // panic info, and then restore curses.
@@ -922,7 +925,7 @@ macro_rules! acs_getter {
         attributes: Attributes::ALT_CHAR_SET,
       }
     }
-  }
+  };
 }
 
 impl Curses {
