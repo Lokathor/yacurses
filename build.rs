@@ -32,7 +32,7 @@ fn main() {
 
   build.compile("pdcurses");
 
-  println!("cargo:rustc-link-lib=dylib=pdcurses");
+  println!("cargo:rustc-link-lib=static=pdcurses");
   println!("cargo:rustc-link-lib=dylib=user32");
 }
 
