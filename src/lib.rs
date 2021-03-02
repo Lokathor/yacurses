@@ -294,6 +294,19 @@ impl Curses {
     }
   }
 
+  /// Attempts to change the terminal size to a new size.
+  ///
+  /// In many contexts the terminal size cannot change. Your program should
+  /// tolerate that this will fail under reasonable conditions.
+  pub fn set_terminal_size(
+    &mut self, size: TerminalSize,
+  ) -> Result<(), &'static str> {
+    unsafe_call_result!(
+      "resize_term",
+      resize_term(size.y_count as _, size.x_count as _)
+    )
+  }
+
   /// Assigns the timeout to use with [`poll_events`](Curses::poll_events).
   ///
   /// * Negative: infinite time, `poll_events` is blocking.
@@ -357,7 +370,10 @@ impl Curses {
       KEY_PPAGE => Some(CursesKey::PageUp),
       KEY_NPAGE => Some(CursesKey::PageDown),
       KEY_B2 => Some(CursesKey::Keypad5NoNumlock),
-      KEY_RESIZE => Some(CursesKey::TerminalResized),
+      KEY_RESIZE => {
+        unsafe { resize_term(0, 0) };
+        Some(CursesKey::TerminalResized)
+      }
       KEY_ENTER => Some(CursesKey::Enter),
       //
       f if (f >= KEY_F0 && f <= KEY_F64) => {
