@@ -86,6 +86,8 @@ extern "C" {
     arg1: c_short, arg2: *mut c_short, arg3: *mut c_short,
   ) -> c_int;
 
+  pub fn resize_term(lines: c_int, columns: c_int) -> c_int;
+
   pub fn scrollok(arg1: *mut WINDOW, arg2: bool) -> c_int;
 
   pub fn start_color() -> c_int;
