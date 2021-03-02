@@ -18,7 +18,7 @@
 //!
 //! ## Usage
 //!
-//! This crate is accessed through a `Curses` handle (traditionally called
+//! This crate is accessed through a [`Curses`] handle (traditionally called
 //! "win", for "window"). Use the [`init`](Curses::init) method to start curses
 //! mode. Dropping the struct will automatically end curses mode.
 //!
