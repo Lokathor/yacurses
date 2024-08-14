@@ -54,9 +54,9 @@ use core::{
   mem::replace,
   num::NonZeroU8,
   ops::*,
-  panic::PanicInfo,
   sync::atomic::{AtomicBool, Ordering},
 };
+use std::panic::PanicInfo;
 
 mod curses_common;
 use curses_common::*;
